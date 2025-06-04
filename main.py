@@ -1,4 +1,5 @@
 import os
+import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -64,7 +65,13 @@ def transcribe_file():
     window.update()
 
     try:
-        perform_transcription(file_path, output_text, window)
+
+        threading.Thread(
+            target=perform_transcription,
+            args=(file_path, output_text, window),
+            daemon=True,
+        ).start()
+
     except (OSError, RuntimeError, ValueError) as e:
         messagebox.showerror("Σφάλμα", f"Κάτι πήγε στραβά:\n{str(e)}")
 
