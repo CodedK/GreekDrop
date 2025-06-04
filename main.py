@@ -65,7 +65,7 @@ def transcribe_file():
 
     try:
         perform_transcription(file_path, output_text, window)
-    except Exception as e:
+    except (OSError, RuntimeError, ValueError) as e:
         messagebox.showerror("Σφάλμα", f"Κάτι πήγε στραβά:\n{str(e)}")
 
 
