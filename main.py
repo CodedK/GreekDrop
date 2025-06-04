@@ -96,11 +96,13 @@ def remove_silence_ffmpeg(input_path):
 
     command = [
         "ffmpeg",
-        "-y",  # overwrite
+        "-y",
         "-i",
         input_path,
         "-af",
-        "silenceremove=1:0:-50dB",
+        # Aggresively remove the silence
+        "silenceremove=start_periods=1:start_duration=0.3:start_threshold=-40dB:stop_periods=1:stop_duration=0.3:stop_threshold=-40dB",
+        # "silenceremove=1:0:-50dB", # Simple silence removal
         cleaned_path,
     ]
 
