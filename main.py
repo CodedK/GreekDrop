@@ -17,7 +17,7 @@ from tkinter import filedialog, messagebox, ttk
 import whisper
 from tkinterdnd2 import DND_FILES, TkinterDnD
 
-VERSION = "1.0.0"
+VERSION = "1.0.5"
 
 
 def format_timestamp(seconds: float, vtt=False) -> str:
