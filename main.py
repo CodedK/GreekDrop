@@ -8,6 +8,7 @@ plain text, SRT, and VTT subtitles.
 
 import os
 import subprocess
+import tempfile
 import threading
 import time
 import tkinter as tk
@@ -59,7 +60,7 @@ def save_transcription_result(result, file_path, selected_format):
     return out_path
 
 
-def run_whisper_transcription(file_path):
+def run_whisper_transcription(file_path, output_text=None, window=None):
     print(f"[WHISPER] Using file: {file_path}", flush=True)
     print(f"[WHISPER] Exists: {os.path.exists(file_path)}", flush=True)
 
@@ -71,9 +72,10 @@ def run_whisper_transcription(file_path):
             "Το FFmpeg δεν είναι εγκατεστημένο ή δεν υπάρχει στο PATH"
         ) from e
 
-    output_text.insert(tk.END, "⏳ Το Whisper επεξεργάζεται το αρχείο...\n")
-    output_text.see(tk.END)
-    window.update()
+    if output_text and window:
+        output_text.insert(tk.END, "⏳ Το Whisper επεξεργάζεται το αρχείο...\n")
+        output_text.see(tk.END)
+        window.update()
 
     print("[DEBUG] Starting model load...", flush=True)
     start = time.time()
@@ -81,6 +83,31 @@ def run_whisper_transcription(file_path):
     print(f"[DEBUG] Model loaded in {time.time() - start:.2f} sec", flush=True)
 
     return model.transcribe(file_path, language="el", verbose=True)
+
+
+def remove_silence_ffmpeg(input_path):
+    """Removes silence from an audio file using FFmpeg and returns the cleaned temp path."""
+    base_name = os.path.basename(input_path)
+    name_wo_ext = os.path.splitext(base_name)[0]
+    cleaned_path = os.path.join(tempfile.gettempdir(), f"{name_wo_ext}_cleaned.mp3")
+
+    command = [
+        "ffmpeg",
+        "-y",  # overwrite
+        "-i",
+        input_path,
+        "-af",
+        "silenceremove=1:0:-50dB",
+        cleaned_path,
+    ]
+
+    try:
+        subprocess.run(command, check=True, capture_output=True)
+        return cleaned_path
+    except subprocess.CalledProcessError as e:
+        stderr_msg = e.stderr.decode() if e.stderr else "Unknown error"
+        print(f"[FFMPEG] Failed to clean silence: {stderr_msg}")
+        return input_path
 
 
 def cleanup_ui(btn, pbar):
@@ -91,11 +118,13 @@ def cleanup_ui(btn, pbar):
 
 
 def perform_transcription(file_path, output_text, window, pbar, btn):
+    cleaned_path = None
     try:
         output_text.insert(tk.END, "🎧 Ανάλυση ήχου...\n")
         window.update()
 
-        result = run_whisper_transcription(file_path)
+        cleaned_path = remove_silence_ffmpeg(file_path)
+        result = run_whisper_transcription(cleaned_path, output_text, window)
         selected_format = format_var.get()
         out_path = save_transcription_result(result, file_path, selected_format)
 
@@ -104,6 +133,13 @@ def perform_transcription(file_path, output_text, window, pbar, btn):
     except (OSError, RuntimeError, ValueError) as e:
         messagebox.showerror("Σφάλμα", f"Συνέβη σφάλμα:\n{str(e)}")
     finally:
+        # Clean up temporary file
+        if cleaned_path and cleaned_path != file_path and os.path.exists(cleaned_path):
+            try:
+                os.remove(cleaned_path)
+                print(f"[CLEANUP] Removed temp file: {cleaned_path}")
+            except OSError as e:
+                print(f"[CLEANUP] Failed to remove temp file: {e}")
         cleanup_ui(btn, pbar)
 
 
