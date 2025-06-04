@@ -69,7 +69,7 @@ def run_whisper_transcription(file_path, output_text=None, window=None):
 
     try:
         subprocess.run(["ffmpeg", "-version"], check=True, capture_output=True)
-    except Exception as e:
+    except (FileNotFoundError, subprocess.CalledProcessError) as e:
         print("[ERROR] FFmpeg check failed:", e)
         raise RuntimeError(
             "Το FFmpeg δεν είναι εγκατεστημένο ή δεν υπάρχει στο PATH"
@@ -100,9 +100,8 @@ def remove_silence_ffmpeg(input_path):
         "-i",
         input_path,
         "-af",
-        # Aggresively remove the silence
+        # Aggressively remove the silence
         "silenceremove=start_periods=1:start_duration=0.3:start_threshold=-40dB:stop_periods=1:stop_duration=0.3:stop_threshold=-40dB",
-        # "silenceremove=1:0:-50dB", # Simple silence removal
         cleaned_path,
     ]
 
@@ -172,30 +171,14 @@ def transcribe_file():
 
 def on_file_drop(event):
     dropped_data = event.data.strip()
-    print(f"[DROP] Got: {event.data}")  # Προσωρινά για έλεγχο
-    files = window.tk.splitlist(dropped_data)  # allows multiple files
+    print(f"[DROP] Got: {event.data}")
+    files = window.tk.splitlist(dropped_data)
     if not files:
         messagebox.showerror("Σφάλμα", "Δεν εντοπίστηκε έγκυρο αρχείο.")
         return
 
     file_path = files[0].strip("{}")
-    if not os.path.isfile(file_path):
-        messagebox.showerror("Σφάλμα", "Το αρχείο δεν βρέθηκε.")
-        return
-
-    output_text.delete("1.0", tk.END)
-    output_text.insert(tk.END, f"🔄 GreekDrop {VERSION} ξεκινά...\n")
-    window.update()
-
-    transcribe_button.config(state=tk.DISABLED)
-    progress_bar.grid(row=0, column=3, padx=10)
-    progress_bar.start()
-
-    threading.Thread(
-        target=perform_transcription,
-        args=(file_path, output_text, window, progress_bar, transcribe_button),
-        daemon=True,
-    ).start()
+    start_transcription(file_path)
 
 
 # === GUI Setup ===
