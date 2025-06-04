@@ -7,12 +7,14 @@ plain text, SRT, and VTT subtitles.
 """
 
 import os
+import subprocess
 import threading
+import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
-from tkinterdnd2 import TkinterDnD, DND_FILES
 
 import whisper
+from tkinterdnd2 import DND_FILES, TkinterDnD
 
 VERSION = "1.0.0"
 
@@ -58,12 +60,27 @@ def save_transcription_result(result, file_path, selected_format):
 
 
 def run_whisper_transcription(file_path):
-    """Load Whisper model and perform transcription."""
-    print(f"[WHISPER] Using file: {file_path}")
-    print(f"[WHISPER] Exists: {os.path.exists(file_path)}")
+    print(f"[WHISPER] Using file: {file_path}", flush=True)
+    print(f"[WHISPER] Exists: {os.path.exists(file_path)}", flush=True)
 
+    try:
+        subprocess.run(["ffmpeg", "-version"], check=True, capture_output=True)
+    except Exception as e:
+        print("[ERROR] FFmpeg check failed:", e)
+        raise RuntimeError(
+            "Το FFmpeg δεν είναι εγκατεστημένο ή δεν υπάρχει στο PATH"
+        ) from e
+
+    output_text.insert(tk.END, "⏳ Το Whisper επεξεργάζεται το αρχείο...\n")
+    output_text.see(tk.END)
+    window.update()
+
+    print("[DEBUG] Starting model load...", flush=True)
+    start = time.time()
     model = whisper.load_model("medium")
-    return model.transcribe(file_path, language="el")
+    print(f"[DEBUG] Model loaded in {time.time() - start:.2f} sec", flush=True)
+
+    return model.transcribe(file_path, language="el", verbose=True)
 
 
 def cleanup_ui(btn, pbar):
