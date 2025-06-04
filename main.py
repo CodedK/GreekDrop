@@ -47,17 +47,24 @@ def export_subtitles(segments, out_path, fmt="srt"):
 
 def save_transcription_result(result, file_path, selected_format):
     """Save transcription result to file in the specified format."""
-    base_path = os.path.splitext(file_path)[0]
+    base_name = os.path.splitext(os.path.basename(file_path))[0]
+    date_str = time.strftime("%Y.%m.%d")
+    output_dir = os.path.join(os.getcwd(), "transcriptions")
+    os.makedirs(output_dir, exist_ok=True)
+
+    out_path = os.path.join(output_dir, f"{date_str}_{base_name}.{selected_format}")
 
     if selected_format == "txt":
-        out_path = f"{base_path}_transcript.txt"
         with open(out_path, "w", encoding="utf-8") as f:
             f.write(result["text"])
     else:
-        out_path = f"{base_path}_subtitles.{selected_format}"
         export_subtitles(result["segments"], out_path, fmt=selected_format)
 
     return out_path
+
+
+...
+# All other content remains the same as previously uploaded
 
 
 def run_whisper_transcription(file_path, output_text=None, window=None):
