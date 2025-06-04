@@ -22,15 +22,15 @@ def format_timestamp(seconds: float, vtt=False) -> str:
 def export_subtitles(segments, out_path, fmt="srt"):
     with open(out_path, "w", encoding="utf-8") as f:
         if fmt == "vtt":
-            f.write("WEBVTT\\n\\n")
+            f.write("WEBVTT\n\n")
         for i, seg in enumerate(segments, 1):
             if fmt in {"srt", "vtt"}:
-                f.write(f"{i}\\n")
+                f.write(f"{i}\n")
                 start = format_timestamp(seg["start"], vtt=(fmt == "vtt"))
                 end = format_timestamp(seg["end"], vtt=(fmt == "vtt"))
                 sep = " --> "
-                f.write(f"{start}{sep}{end}\\n")
-                f.write(f"{seg['text'].strip()}\\n\\n")
+                f.write(f"{start}{sep}{end}\n")
+                f.write(f"{seg['text'].strip()}\n\n")
 
 
 def save_transcription_result(result, file_path, selected_format):
@@ -70,10 +70,10 @@ def perform_transcription(file_path, output_text, window, progress_bar, btn):
         selected_format = format_var.get()
         out_path = save_transcription_result(result, file_path, selected_format)
 
-        output_text.insert(tk.END, f"✅ Ολοκληρώθηκε!\\nΑρχείο: {out_path}\\n\\n")
+        output_text.insert(tk.END, f"✅ Ολοκληρώθηκε!\nΑρχείο: {out_path}\n\n")
         output_text.insert(tk.END, result["text"])
     except (OSError, RuntimeError, ValueError) as e:
-        messagebox.showerror("Σφάλμα", f"Συνέβη σφάλμα:\\n{str(e)}")
+        messagebox.showerror("Σφάλμα", f"Συνέβη σφάλμα:\n{str(e)}")
     finally:
         cleanup_ui(btn, progress_bar)
 
