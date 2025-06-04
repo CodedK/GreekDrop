@@ -1,7 +1,16 @@
+"""
+GreekDrop - Greek Audio Transcription Tool
+
+A tkinter-based GUI application that transcribes Greek audio files to text
+using OpenAI's Whisper model. Supports multiple output formats including
+plain text, SRT, and VTT subtitles.
+"""
+
 import os
 import threading
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from tkinterdnd2 import TkinterDnD, DND_FILES
 
 import whisper
 
@@ -100,8 +109,29 @@ def transcribe_file():
     ).start()
 
 
+def on_file_drop(event):
+    file_path = event.data.strip("{}")  # Remove curly braces around paths with spaces
+    if os.path.isfile(file_path):
+        output_text.delete("1.0", tk.END)
+        output_text.insert(tk.END, f"🔄 GreekDrop {VERSION} ξεκινά...\n")
+        window.update()
+
+        transcribe_button.config(state=tk.DISABLED)
+        progress_bar.grid(row=0, column=3, padx=10)
+        progress_bar.start()
+
+        threading.Thread(
+            target=perform_transcription,
+            args=(file_path, output_text, window, progress_bar, transcribe_button),
+            daemon=True,
+        ).start()
+    else:
+        messagebox.showerror("Σφάλμα", "Το αρχείο δεν είναι έγκυρο.")
+
+
 # === GUI Setup ===
-window = tk.Tk()
+window = TkinterDnD.Tk()
+
 window.title(f"🎙️ GreekDrop {VERSION}")
 window.geometry("750x570")
 
