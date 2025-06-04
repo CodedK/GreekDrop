@@ -63,14 +63,14 @@ def run_whisper_transcription(file_path):
     return model.transcribe(file_path, language="el")
 
 
-def cleanup_ui(btn, progress_bar):
+def cleanup_ui(btn, pbar):
     """Reset UI elements after transcription completion."""
     btn.config(state=tk.NORMAL)
-    progress_bar.stop()
-    progress_bar.grid_remove()
+    pbar.stop()
+    pbar.grid_remove()
 
 
-def perform_transcription(file_path, output_text, window, progress_bar, btn):
+def perform_transcription(file_path, output_text, window, pbar, btn):
     try:
         output_text.insert(tk.END, "🎧 Ανάλυση ήχου...\n")
         window.update()
@@ -84,7 +84,7 @@ def perform_transcription(file_path, output_text, window, progress_bar, btn):
     except (OSError, RuntimeError, ValueError) as e:
         messagebox.showerror("Σφάλμα", f"Συνέβη σφάλμα:\n{str(e)}")
     finally:
-        cleanup_ui(btn, progress_bar)
+        cleanup_ui(btn, pbar)
 
 
 def transcribe_file():
@@ -110,23 +110,30 @@ def transcribe_file():
 
 
 def on_file_drop(event):
-    file_path = event.data.strip("{}")  # Remove curly braces around paths with spaces
-    if os.path.isfile(file_path):
-        output_text.delete("1.0", tk.END)
-        output_text.insert(tk.END, f"🔄 GreekDrop {VERSION} ξεκινά...\n")
-        window.update()
+    dropped_data = event.data.strip()
+    files = window.tk.splitlist(dropped_data)  # allows multiple files
+    if not files:
+        messagebox.showerror("Σφάλμα", "Δεν εντοπίστηκε έγκυρο αρχείο.")
+        return
 
-        transcribe_button.config(state=tk.DISABLED)
-        progress_bar.grid(row=0, column=3, padx=10)
-        progress_bar.start()
+    file_path = files[0].strip("{}")
+    if not os.path.isfile(file_path):
+        messagebox.showerror("Σφάλμα", "Το αρχείο δεν βρέθηκε.")
+        return
 
-        threading.Thread(
-            target=perform_transcription,
-            args=(file_path, output_text, window, progress_bar, transcribe_button),
-            daemon=True,
-        ).start()
-    else:
-        messagebox.showerror("Σφάλμα", "Το αρχείο δεν είναι έγκυρο.")
+    output_text.delete("1.0", tk.END)
+    output_text.insert(tk.END, f"🔄 GreekDrop {VERSION} ξεκινά...\n")
+    window.update()
+
+    transcribe_button.config(state=tk.DISABLED)
+    progress_bar.grid(row=0, column=3, padx=10)
+    progress_bar.start()
+
+    threading.Thread(
+        target=perform_transcription,
+        args=(file_path, output_text, window, progress_bar, transcribe_button),
+        daemon=True,
+    ).start()
 
 
 # === GUI Setup ===
@@ -161,5 +168,9 @@ progress_bar.grid_remove()
 
 output_text = tk.Text(window, wrap=tk.WORD, font=("Courier", 11))
 output_text.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
+
+# Enable drag and drop
+window.drop_target_register(DND_FILES)
+window.dnd_bind("<<Drop>>", on_file_drop)
 
 window.mainloop()
