@@ -72,7 +72,7 @@ def perform_transcription(file_path, output_text, window, progress_bar, btn):
 
         output_text.insert(tk.END, f"✅ Ολοκληρώθηκε!\\nΑρχείο: {out_path}\\n\\n")
         output_text.insert(tk.END, result["text"])
-    except Exception as e:
+    except (OSError, RuntimeError, ValueError) as e:
         messagebox.showerror("Σφάλμα", f"Συνέβη σφάλμα:\\n{str(e)}")
     finally:
         cleanup_ui(btn, progress_bar)
