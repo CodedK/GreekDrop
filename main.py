@@ -63,10 +63,6 @@ def save_transcription_result(result, file_path, selected_format):
     return out_path
 
 
-...
-# All other content remains the same as previously uploaded
-
-
 def run_whisper_transcription(file_path, output_text=None, window=None):
     print(f"[WHISPER] Using file: {file_path}", flush=True)
     print(f"[WHISPER] Exists: {os.path.exists(file_path)}", flush=True)
