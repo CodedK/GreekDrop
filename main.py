@@ -111,6 +111,7 @@ def transcribe_file():
 
 def on_file_drop(event):
     dropped_data = event.data.strip()
+    print(f"[DROP] Got: {event.data}")  # Προσωρινά για έλεγχο
     files = window.tk.splitlist(dropped_data)  # allows multiple files
     if not files:
         messagebox.showerror("Σφάλμα", "Δεν εντοπίστηκε έγκυρο αρχείο.")
