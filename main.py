@@ -12,25 +12,25 @@ import tempfile
 import threading
 import time
 import tkinter as tk
+import warnings
 from datetime import datetime, timedelta
 from tkinter import filedialog, messagebox, ttk
+
 import whisper
-import warnings
 from tkinterdnd2 import DND_FILES, TkinterDnD
 
-VERSION = "1.0.7"
+VERSION = "1.0.8"
 
 warnings.filterwarnings(
     "ignore", category=UserWarning, message="FP16 is not supported on CPU.*"
 )
 
 
-def format_timestamp(seconds: float, vtt=False) -> str:
+def format_timestamp(seconds: float, sep=":") -> str:
     h = int(seconds // 3600)
     m = int((seconds % 3600) // 60)
     s = int(seconds % 60)
-    ms = int((seconds % 1) * 1000)
-    return f"{h:02}:{m:02}:{s:02}.{ms:03}" if vtt else f"{h:02}:{m:02}:{s:02},{ms:03}"
+    return f"{h:02}{sep}{m:02}{sep}{s:02}"
 
 
 def get_audio_metadata(file_path):
@@ -80,8 +80,8 @@ def export_subtitles(segments, out_path, fmt="srt"):
         for i, seg in enumerate(segments, 1):
             if fmt in {"srt", "vtt"}:
                 f.write(f"{i}\n")
-                start = format_timestamp(seg["start"], vtt=(fmt == "vtt"))
-                end = format_timestamp(seg["end"], vtt=(fmt == "vtt"))
+                start = format_timestamp(seg["start"], sep=":")
+                end = format_timestamp(seg["end"], sep=":")
                 f.write(f"{start} --> {end}\n{seg['text'].strip()}\n\n")
 
 
@@ -104,30 +104,23 @@ def save_transcription_result(result, file_path, selected_format):
 def run_whisper_transcription(file_path, output_text=None, window=None, duration=None):
     print(f"[WHISPER] Using file: {file_path}", flush=True)
     print(f"[WHISPER] Exists: {os.path.exists(file_path)}", flush=True)
+
     if output_text:
         output_text.insert(tk.END, "\n\n📊 Στατιστικά αρχείου:\n", "info")
         output_text.insert(tk.END, get_audio_metadata(file_path), "info")
+        if duration:
+            eta = timedelta(seconds=int(duration))
+            output_text.insert(tk.END, f"\n⏳ Εκτίμηση λήξης: {eta}\n", "stats")
         window.update()
+
     model = whisper.load_model("medium")
-    start_time = time.time()
-    result = {}
 
-    def progress_loop():
-        while not result:
-            elapsed = time.time() - start_time
-            if duration:
-                processed_ratio = min(elapsed / duration, 1)
-                eta = timedelta(seconds=int((1 - processed_ratio) * duration))
-                window.after(0, lambda: update_eta(f"⏳ Εκτίμηση λήξης: {str(eta)}\n"))
-            time.sleep(1)
+    result = {"segments": [], "text": ""}
 
-    def update_eta(text):
-        output_text.insert(tk.END, text, "stats")
-        output_text.see(tk.END)
-        window.update()
+    start_global = time.time()
+    prev_wall = start_global
 
-    threading.Thread(target=progress_loop, daemon=True).start()
-    result = model.transcribe(
+    raw_result = model.transcribe(
         file_path,
         language="el",
         verbose=False,
@@ -137,13 +130,27 @@ def run_whisper_transcription(file_path, output_text=None, window=None, duration
 
     if output_text:
         output_text.insert(tk.END, "\n🕓 Χρονικά τμήματα:\n", "info")
-        for segment in result.get("segments", []):
-            start = format_timestamp(segment["start"], vtt=False).replace(",", ":")
-            end = format_timestamp(segment["end"], vtt=False).replace(",", ":")
-            output_text.insert(
-                tk.END, f"{start} -> {end} -> {segment['text'].strip()}\n"
-            )
-        output_text.insert(tk.END, "\n")
+
+    for seg in raw_result["segments"]:
+        start = seg["start"]
+        end = seg["end"]
+        text = seg["text"].strip()
+        now = time.time()
+        wall_elapsed = now - prev_wall
+        prev_wall = now
+        audio_seconds = end - start
+
+        start_fmt = format_timestamp(start, sep=":")
+        end_fmt = format_timestamp(end, sep=":")
+
+        line = f"{start_fmt} -> {end_fmt} -> {text}  [parsed {audio_seconds:.0f} secs of audio in {wall_elapsed:.0f} seconds]\n"
+        if output_text:
+            output_text.insert(tk.END, line)
+            output_text.see(tk.END)
+            window.update()
+
+        result["segments"].append(seg)
+        result["text"] += f"{text} "
 
     return result
 
@@ -178,22 +185,19 @@ def cleanup_ui(btn, pbar):
 def perform_transcription(file_path, output_text, window, pbar, btn):
     cleaned_path = None
     try:
-        output_text.insert(tk.END, "🎧 Ανάλυση ήχου...")
+        output_text.insert(tk.END, "🎧 Ανάλυση ήχου...\n")
         window.update()
-
         cleaned_path = remove_silence_ffmpeg(file_path)
         duration = estimate_duration(cleaned_path)
         output_text.insert(
-            tk.END, f"\n⏱️ Εκτιμώμενη διάρκεια: {duration:.2f} sec\n", "stats"
+            tk.END, f"⏱️ Εκτιμώμενη διάρκεια: {duration:.2f} sec\n", "stats"
         )
         result = run_whisper_transcription(cleaned_path, output_text, window, duration)
         selected_format = format_var.get()
         out_path = save_transcription_result(result, file_path, selected_format)
-
         output_text.insert(
             tk.END, f"\n✅ Ολοκληρώθηκε!\nΑρχείο: {out_path}\n\n", "done"
         )
-        output_text.insert(tk.END, result["text"])
     except Exception as e:
         messagebox.showerror("Σφάλμα", f"Συνέβη σφάλμα:\n{str(e)}")
     finally:
@@ -269,4 +273,7 @@ output_text.tag_config("stats", foreground="orange")
 output_text.tag_config("done", foreground="green")
 window.drop_target_register(DND_FILES)
 window.dnd_bind("<<Drop>>", on_file_drop)
+window.lift()
+window.attributes("-topmost", True)
+window.after_idle(window.attributes, "-topmost", False)
 window.mainloop()
