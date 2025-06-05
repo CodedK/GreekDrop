@@ -1,22 +1,13 @@
-"""
-GreekDrop - Greek Audio Transcription Tool
-
-A tkinter-based GUI application that transcribes Greek audio files to text
-using OpenAI's Whisper model. Supports multiple output formats including
-plain text, SRT, and VTT subtitles.
-"""
-
 import os
 import subprocess
 import tempfile
 import threading
 import time
 import tkinter as tk
-import warnings
 from datetime import datetime, timedelta
 from tkinter import filedialog, messagebox, ttk
-
 import whisper
+import warnings
 from tkinterdnd2 import DND_FILES, TkinterDnD
 
 VERSION = "1.0.8"
@@ -46,7 +37,7 @@ def get_audio_metadata(file_path):
             file_path,
         ]
         result = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
         return result.stdout
     except Exception as e:
@@ -66,39 +57,11 @@ def estimate_duration(file_path):
             file_path,
         ]
         result = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
         return float(result.stdout.strip())
-    except (ValueError, AttributeError, subprocess.SubprocessError):
+    except:
         return 0.0
-
-
-def export_subtitles(segments, out_path, fmt="srt"):
-    with open(out_path, "w", encoding="utf-8") as f:
-        if fmt == "vtt":
-            f.write("WEBVTT\n\n")
-        for i, seg in enumerate(segments, 1):
-            if fmt in {"srt", "vtt"}:
-                f.write(f"{i}\n")
-                start = format_timestamp(seg["start"], sep=":")
-                end = format_timestamp(seg["end"], sep=":")
-                f.write(f"{start} --> {end}\n{seg['text'].strip()}\n\n")
-
-
-def save_transcription_result(result, file_path, selected_format):
-    base_name = os.path.splitext(os.path.basename(file_path))[0]
-    today = datetime.now().strftime("%Y.%m.%d.%H.%M.%S")
-    out_dir = os.path.join(os.getcwd(), "transcriptions")
-    os.makedirs(out_dir, exist_ok=True)
-    ext = selected_format if selected_format != "txt" else "txt"
-    filename = f"{today}_{base_name}.{ext}"
-    out_path = os.path.join(out_dir, filename)
-    if selected_format == "txt":
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write(result["text"])
-    else:
-        export_subtitles(result["segments"], out_path, fmt=selected_format)
-    return out_path
 
 
 def run_whisper_transcription(file_path, output_text=None, window=None, duration=None):
@@ -108,9 +71,6 @@ def run_whisper_transcription(file_path, output_text=None, window=None, duration
     if output_text:
         output_text.insert(tk.END, "\n\n📊 Στατιστικά αρχείου:\n", "info")
         output_text.insert(tk.END, get_audio_metadata(file_path), "info")
-        if duration:
-            eta = timedelta(seconds=int(duration))
-            output_text.insert(tk.END, f"\n⏳ Εκτίμηση λήξης: {eta}\n", "stats")
         window.update()
 
     model = whisper.load_model("medium")
@@ -128,31 +88,67 @@ def run_whisper_transcription(file_path, output_text=None, window=None, duration
         fp16=False,
     )
 
+    base_name = os.path.splitext(os.path.basename(file_path))[0]
+    today = datetime.now().strftime("%Y.%m.%d.%H.%M.%S")
+    out_dir = os.path.join(os.getcwd(), "transcriptions")
+    os.makedirs(out_dir, exist_ok=True)
+    log_path = os.path.join(out_dir, f"{today}_{base_name}.log")
+
     if output_text:
         output_text.insert(tk.END, "\n🕓 Χρονικά τμήματα:\n", "info")
 
-    for seg in raw_result["segments"]:
-        start = seg["start"]
-        end = seg["end"]
-        text = seg["text"].strip()
-        now = time.time()
-        wall_elapsed = now - prev_wall
-        prev_wall = now
-        audio_seconds = end - start
+    with open(log_path, "w", encoding="utf-8") as log:
+        for seg in raw_result["segments"]:
+            start = seg["start"]
+            end = seg["end"]
+            text = seg["text"].strip()
+            now = time.time()
+            wall_elapsed = now - prev_wall
+            prev_wall = now
+            audio_seconds = end - start
 
-        start_fmt = format_timestamp(start, sep=":")
-        end_fmt = format_timestamp(end, sep=":")
+            start_fmt = format_timestamp(start)
+            end_fmt = format_timestamp(end)
 
-        line = f"{start_fmt} -> {end_fmt} -> {text}  [parsed {audio_seconds:.0f} secs of audio in {wall_elapsed:.0f} seconds]\n"
-        if output_text:
-            output_text.insert(tk.END, line)
-            output_text.see(tk.END)
-            window.update()
+            line = f"{start_fmt} -> {end_fmt} -> {text}  [parsed {audio_seconds:.0f} secs of audio in {wall_elapsed:.0f} seconds]\n"
+            print(line.strip())
+            log.write(line)
+            if output_text:
+                output_text.insert(tk.END, line)
+                output_text.see(tk.END)
+                window.update()
 
-        result["segments"].append(seg)
-        result["text"] += f"{text} "
+            result["segments"].append(seg)
+            result["text"] += text + " "
 
     return result
+
+
+def export_subtitles(segments, out_path, fmt="srt"):
+    with open(out_path, "w", encoding="utf-8") as f:
+        if fmt == "vtt":
+            f.write("WEBVTT\n\n")
+        for i, seg in enumerate(segments, 1):
+            if fmt in {"srt", "vtt"}:
+                start = format_timestamp(seg["start"], sep=":" if fmt == "vtt" else ",")
+                end = format_timestamp(seg["end"], sep=":" if fmt == "vtt" else ",")
+                f.write(f"{i}\n{start} --> {end}\n{seg['text'].strip()}\n\n")
+
+
+def save_transcription_result(result, file_path, selected_format):
+    base_name = os.path.splitext(os.path.basename(file_path))[0]
+    today = datetime.now().strftime("%Y.%m.%d.%H.%M.%S")
+    out_dir = os.path.join(os.getcwd(), "transcriptions")
+    os.makedirs(out_dir, exist_ok=True)
+    ext = selected_format if selected_format != "txt" else "txt"
+    filename = f"{today}_{base_name}.{ext}"
+    out_path = os.path.join(out_dir, filename)
+    if selected_format == "txt":
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write(result["text"])
+    else:
+        export_subtitles(result["segments"], out_path, fmt=selected_format)
+    return out_path
 
 
 def remove_silence_ffmpeg(input_path):
@@ -192,12 +188,15 @@ def perform_transcription(file_path, output_text, window, pbar, btn):
         output_text.insert(
             tk.END, f"⏱️ Εκτιμώμενη διάρκεια: {duration:.2f} sec\n", "stats"
         )
+        print(f"⏳ Εκτίμηση λήξης: {str(timedelta(seconds=round(duration)))}")
         result = run_whisper_transcription(cleaned_path, output_text, window, duration)
         selected_format = format_var.get()
         out_path = save_transcription_result(result, file_path, selected_format)
         output_text.insert(
             tk.END, f"\n✅ Ολοκληρώθηκε!\nΑρχείο: {out_path}\n\n", "done"
         )
+        print("\n▶️ Πάτησε Enter για έξοδο...")
+        input()
     except Exception as e:
         messagebox.showerror("Σφάλμα", f"Συνέβη σφάλμα:\n{str(e)}")
     finally:
@@ -273,7 +272,4 @@ output_text.tag_config("stats", foreground="orange")
 output_text.tag_config("done", foreground="green")
 window.drop_target_register(DND_FILES)
 window.dnd_bind("<<Drop>>", on_file_drop)
-window.lift()
-window.attributes("-topmost", True)
-window.after_idle(window.attributes, "-topmost", False)
 window.mainloop()
