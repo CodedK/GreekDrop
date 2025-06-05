@@ -49,7 +49,7 @@ def export_subtitles(segments, out_path, fmt="srt"):
 def save_transcription_result(result, file_path, selected_format):
     """Save transcription result to file in the specified format."""
     base_name = os.path.splitext(os.path.basename(file_path))[0]
-    today = datetime.now().strftime("%Y.%m.%d")
+    today = datetime.now().strftime("%Y.%m.%d.%H.%M.%S")
     out_dir = os.path.join(os.getcwd(), "transcriptions")
     os.makedirs(out_dir, exist_ok=True)
 
