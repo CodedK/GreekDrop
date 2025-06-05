@@ -12,12 +12,13 @@ import tempfile
 import threading
 import time
 import tkinter as tk
+from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
 import whisper
 from tkinterdnd2 import DND_FILES, TkinterDnD
 
-VERSION = "1.0.5"
+VERSION = "1.0.6"
 
 
 def format_timestamp(seconds: float, vtt=False) -> str:
@@ -48,11 +49,14 @@ def export_subtitles(segments, out_path, fmt="srt"):
 def save_transcription_result(result, file_path, selected_format):
     """Save transcription result to file in the specified format."""
     base_name = os.path.splitext(os.path.basename(file_path))[0]
-    date_str = time.strftime("%Y.%m.%d")
-    output_dir = os.path.join(os.getcwd(), "transcriptions")
-    os.makedirs(output_dir, exist_ok=True)
+    today = datetime.now().strftime("%Y.%m.%d")
+    out_dir = os.path.join(os.getcwd(), "transcriptions")
+    os.makedirs(out_dir, exist_ok=True)
 
-    out_path = os.path.join(output_dir, f"{date_str}_{base_name}.{selected_format}")
+    filename = (
+        f"{today}_{base_name}.{selected_format if selected_format != 'txt' else 'txt'}"
+    )
+    out_path = os.path.join(out_dir, filename)
 
     if selected_format == "txt":
         with open(out_path, "w", encoding="utf-8") as f:
@@ -69,7 +73,7 @@ def run_whisper_transcription(file_path, output_text=None, window=None):
 
     try:
         subprocess.run(["ffmpeg", "-version"], check=True, capture_output=True)
-    except (FileNotFoundError, subprocess.CalledProcessError) as e:
+    except Exception as e:
         print("[ERROR] FFmpeg check failed:", e)
         raise RuntimeError(
             "Το FFmpeg δεν είναι εγκατεστημένο ή δεν υπάρχει στο PATH"
@@ -85,11 +89,15 @@ def run_whisper_transcription(file_path, output_text=None, window=None):
     model = whisper.load_model("medium")
     print(f"[DEBUG] Model loaded in {time.time() - start:.2f} sec", flush=True)
 
-    return model.transcribe(file_path, language="el", verbose=True)
+    return model.transcribe(
+        file_path,
+        language="el",
+        verbose=True,
+        condition_on_previous_text=False,  # disable history
+    )
 
 
 def remove_silence_ffmpeg(input_path):
-    """Removes silence from an audio file using FFmpeg and returns the cleaned temp path."""
     base_name = os.path.basename(input_path)
     name_wo_ext = os.path.splitext(base_name)[0]
     cleaned_path = os.path.join(tempfile.gettempdir(), f"{name_wo_ext}_cleaned.mp3")
@@ -100,8 +108,7 @@ def remove_silence_ffmpeg(input_path):
         "-i",
         input_path,
         "-af",
-        # Aggressively remove the silence
-        "silenceremove=start_periods=1:start_duration=0.3:start_threshold=-40dB:stop_periods=1:stop_duration=0.3:stop_threshold=-40dB",
+        "silenceremove=1:0:-50dB",
         cleaned_path,
     ]
 
@@ -115,7 +122,6 @@ def remove_silence_ffmpeg(input_path):
 
 
 def cleanup_ui(btn, pbar):
-    """Reset UI elements after transcription completion."""
     btn.config(state=tk.NORMAL)
     pbar.stop()
     pbar.grid_remove()
@@ -137,7 +143,6 @@ def perform_transcription(file_path, output_text, window, pbar, btn):
     except (OSError, RuntimeError, ValueError) as e:
         messagebox.showerror("Σφάλμα", f"Συνέβη σφάλμα:\n{str(e)}")
     finally:
-        # Clean up temporary file
         if cleaned_path and cleaned_path != file_path and os.path.exists(cleaned_path):
             try:
                 os.remove(cleaned_path)
@@ -171,14 +176,30 @@ def transcribe_file():
 
 def on_file_drop(event):
     dropped_data = event.data.strip()
-    print(f"[DROP] Got: {event.data}")
+    print(f"[DROP] Got: {event.data}", flush=True)
     files = window.tk.splitlist(dropped_data)
     if not files:
         messagebox.showerror("Σφάλμα", "Δεν εντοπίστηκε έγκυρο αρχείο.")
         return
 
     file_path = files[0].strip("{}")
-    start_transcription(file_path)
+    if not os.path.isfile(file_path):
+        messagebox.showerror("Σφάλμα", "Το αρχείο δεν βρέθηκε.")
+        return
+
+    output_text.delete("1.0", tk.END)
+    output_text.insert(tk.END, f"🔄 GreekDrop {VERSION} ξεκινά...\n")
+    window.update()
+
+    transcribe_button.config(state=tk.DISABLED)
+    progress_bar.grid(row=0, column=3, padx=10)
+    progress_bar.start()
+
+    threading.Thread(
+        target=perform_transcription,
+        args=(file_path, output_text, window, progress_bar, transcribe_button),
+        daemon=True,
+    ).start()
 
 
 # === GUI Setup ===
@@ -214,7 +235,6 @@ progress_bar.grid_remove()
 output_text = tk.Text(window, wrap=tk.WORD, font=("Courier", 11))
 output_text.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
 
-# Enable drag and drop
 window.drop_target_register(DND_FILES)
 window.dnd_bind("<<Drop>>", on_file_drop)
 
