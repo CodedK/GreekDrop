@@ -12,7 +12,7 @@ import tempfile
 import threading
 import time
 import tkinter as tk
-from datetime import datetime
+from datetime import datetime, timedelta
 from tkinter import filedialog, messagebox, ttk
 import whisper
 import warnings
@@ -46,7 +46,7 @@ def get_audio_metadata(file_path):
             file_path,
         ]
         result = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False
         )
         return result.stdout
     except Exception as e:
@@ -66,10 +66,10 @@ def estimate_duration(file_path):
             file_path,
         ]
         result = subprocess.run(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=False
         )
         return float(result.stdout.strip())
-    except:
+    except (ValueError, AttributeError, subprocess.SubprocessError):
         return 0.0
 
 
@@ -86,7 +86,6 @@ def export_subtitles(segments, out_path, fmt="srt"):
 
 
 def save_transcription_result(result, file_path, selected_format):
-    """Save transcription result to file in the specified format."""
     base_name = os.path.splitext(os.path.basename(file_path))[0]
     today = datetime.now().strftime("%Y.%m.%d.%H.%M.%S")
     out_dir = os.path.join(os.getcwd(), "transcriptions")
@@ -102,30 +101,51 @@ def save_transcription_result(result, file_path, selected_format):
     return out_path
 
 
-def run_whisper_transcription(file_path, output_text=None, window=None):
+def run_whisper_transcription(file_path, output_text=None, window=None, duration=None):
     print(f"[WHISPER] Using file: {file_path}", flush=True)
     print(f"[WHISPER] Exists: {os.path.exists(file_path)}", flush=True)
-    try:
-        subprocess.run(["ffmpeg", "-version"], check=True, capture_output=True)
-    except Exception as e:
-        print("[ERROR] FFmpeg check failed:", e)
-        raise RuntimeError(
-            "Το FFmpeg δεν είναι εγκατεστημένο ή δεν υπάρχει στο PATH"
-        ) from e
-    if output_text and window:
-        output_text.insert(tk.END, f"\n\n📊 Στατιστικά αρχείου:\n", "info")
+    if output_text:
+        output_text.insert(tk.END, "\n\n📊 Στατιστικά αρχείου:\n", "info")
         output_text.insert(tk.END, get_audio_metadata(file_path), "info")
         window.update()
-    print("Starting model load...", flush=True)
     model = whisper.load_model("medium")
-    print(f"Model loaded in {time.time() - start:.2f} sec", flush=True)
-    return model.transcribe(
+    start_time = time.time()
+    result = {}
+
+    def progress_loop():
+        while not result:
+            elapsed = time.time() - start_time
+            if duration:
+                processed_ratio = min(elapsed / duration, 1)
+                eta = timedelta(seconds=int((1 - processed_ratio) * duration))
+                window.after(0, lambda: update_eta(f"⏳ Εκτίμηση λήξης: {str(eta)}\n"))
+            time.sleep(1)
+
+    def update_eta(text):
+        output_text.insert(tk.END, text, "stats")
+        output_text.see(tk.END)
+        window.update()
+
+    threading.Thread(target=progress_loop, daemon=True).start()
+    result = model.transcribe(
         file_path,
         language="el",
         verbose=False,
         condition_on_previous_text=False,
         fp16=False,
     )
+
+    if output_text:
+        output_text.insert(tk.END, "\n🕓 Χρονικά τμήματα:\n", "info")
+        for segment in result.get("segments", []):
+            start = format_timestamp(segment["start"], vtt=False).replace(",", ":")
+            end = format_timestamp(segment["end"], vtt=False).replace(",", ":")
+            output_text.insert(
+                tk.END, f"{start} -> {end} -> {segment['text'].strip()}\n"
+            )
+        output_text.insert(tk.END, "\n")
+
+    return result
 
 
 def remove_silence_ffmpeg(input_path):
@@ -158,16 +178,18 @@ def cleanup_ui(btn, pbar):
 def perform_transcription(file_path, output_text, window, pbar, btn):
     cleaned_path = None
     try:
-        output_text.insert(tk.END, f"🎧 Ανάλυση ήχου...")
+        output_text.insert(tk.END, "🎧 Ανάλυση ήχου...")
         window.update()
+
         cleaned_path = remove_silence_ffmpeg(file_path)
         duration = estimate_duration(cleaned_path)
         output_text.insert(
             tk.END, f"\n⏱️ Εκτιμώμενη διάρκεια: {duration:.2f} sec\n", "stats"
         )
-        result = run_whisper_transcription(cleaned_path, output_text, window)
+        result = run_whisper_transcription(cleaned_path, output_text, window, duration)
         selected_format = format_var.get()
         out_path = save_transcription_result(result, file_path, selected_format)
+
         output_text.insert(
             tk.END, f"\n✅ Ολοκληρώθηκε!\nΑρχείο: {out_path}\n\n", "done"
         )
