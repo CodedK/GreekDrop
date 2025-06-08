@@ -193,3 +193,8 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 /transcriptions/*.txt
+/OPTIMIZATION_GUIDE.md
+/optimized_main.py
+/PERFORMANCE_SUMMARY.md
+/requirements_optimized.txt
+/build_executable.py
