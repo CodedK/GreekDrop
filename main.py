@@ -60,7 +60,7 @@ def estimate_duration(file_path):
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
         return float(result.stdout.strip())
-    except:
+    except Exception:
         return 0.0
 
 
@@ -110,7 +110,10 @@ def run_whisper_transcription(file_path, output_text=None, window=None, duration
             start_fmt = format_timestamp(start)
             end_fmt = format_timestamp(end)
 
-            line = f"{start_fmt} -> {end_fmt} -> {text}  [parsed {audio_seconds:.0f} secs of audio in {wall_elapsed:.0f} seconds]\n"
+            line = (
+                f"{start_fmt} -> {end_fmt} -> {text}  "
+                f"[parsed {audio_seconds:.0f} secs of audio in {wall_elapsed:.0f} seconds]\n"
+            )
             print(line.strip())
             log.write(line)
             if output_text:

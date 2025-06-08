@@ -1,18 +1,17 @@
+import gc
 import os
 import subprocess
 import tempfile
 import threading
 import time
 import tkinter as tk
-from datetime import datetime, timedelta
-from tkinter import filedialog, messagebox, ttk
-import whisper
 import warnings
-from tkinterdnd2 import DND_FILES, TkinterDnD
-import torch
 from concurrent.futures import ThreadPoolExecutor
-import gc
-import numpy as np
+from datetime import datetime
+from tkinter import filedialog, messagebox, ttk
+import torch
+import whisper
+from tkinterdnd2 import DND_FILES, TkinterDnD
 
 VERSION = "2.0.0-OPTIMIZED"
 
@@ -24,6 +23,7 @@ warnings.filterwarnings(
 _model_cache = None
 _model_lock = threading.Lock()
 
+
 def get_cached_model():
     """Load model once and cache it globally - 10x faster subsequent loads"""
     global _model_cache
@@ -34,7 +34,13 @@ def get_cached_model():
             device = "cuda" if torch.cuda.is_available() else "cpu"
             _model_cache = whisper.load_model("medium", device=device)
             print(f"✅ Model loaded on {device}")
+            # Save the model to the cache directory
+            model_path = os.path.join(os.path.expanduser("~"), "whisper_model")
+            torch.save(_model_cache, model_path)
+            print(f"✅ Model saved to {model_path}")
+            # if gpu is not available, print the re
         return _model_cache
+
 
 def format_timestamp(seconds: float, sep=":") -> str:
     h = int(seconds // 3600)
@@ -42,29 +48,50 @@ def format_timestamp(seconds: float, sep=":") -> str:
     s = int(seconds % 60)
     return f"{h:02}{sep}{m:02}{sep}{s:02}"
 
+
 def get_audio_metadata_fast(file_path):
     """Optimized metadata extraction - single FFprobe call"""
     try:
         cmd = [
-            "ffprobe", "-v", "error", "-select_streams", "a:0",
-            "-show_entries", "format=duration:stream=codec_name,channels,sample_rate",
-            "-of", "json", file_path
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "a:0",
+            "-show_entries",
+            "format=duration:stream=codec_name,channels,sample_rate",
+            "-of",
+            "json",
+            file_path,
         ]
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5)
+        result = subprocess.run(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5
+        )
         return result.stdout
     except Exception as e:
         return f"[ERROR] FFprobe failed: {e}"
 
+
 def estimate_duration_fast(file_path):
     """Fast duration estimation with caching"""
     try:
-        cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration",
-               "-of", "default=noprint_wrappers=1:nokey=1", file_path]
-        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                              text=True, timeout=3)
+        cmd = [
+            "ffprobe",
+            "-v",
+            "error",
+            "-show_entries",
+            "format=duration",
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+            file_path,
+        ]
+        result = subprocess.run(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=3
+        )
         return float(result.stdout.strip())
-    except:
+    except Exception:
         return 0.0
+
 
 def preprocess_audio_optimized(input_path):
     """Optimized audio preprocessing with better parameters"""
@@ -74,12 +101,20 @@ def preprocess_audio_optimized(input_path):
 
     # Optimized FFmpeg command for faster processing
     command = [
-        "ffmpeg", "-y", "-i", input_path,
-        "-ar", "16000",  # Whisper's native sample rate
-        "-ac", "1",      # Mono (faster processing)
-        "-c:a", "pcm_s16le",  # Uncompressed for fastest loading
-        "-af", "silenceremove=start_periods=1:start_duration=1:start_threshold=-60dB:detection=peak,aformat=dblp,dynaudnorm",
-        cleaned_path
+        "ffmpeg",
+        "-y",
+        "-i",
+        input_path,
+        "-ar",
+        "16000",  # Whisper's native sample rate
+        "-ac",
+        "1",  # Mono (faster processing)
+        "-c:a",
+        "pcm_s16le",  # Uncompressed for fastest loading
+        "-af",
+        "silenceremove=start_periods=1:start_duration=1:start_threshold=-60dB:"
+        + "detection=peak,aformat=dblp,dynaudnorm",
+        cleaned_path,
     ]
 
     try:
@@ -89,13 +124,12 @@ def preprocess_audio_optimized(input_path):
         print(f"[FFMPEG] Preprocessing failed, using original: {e}")
         return input_path
 
-def run_whisper_transcription_optimized(file_path, progress_callback=None):
+
+def run_whisper_transcription_optimized(file_path, duration_hint=None):
     """Heavily optimized transcription with GPU support and minimal I/O"""
     print(f"[WHISPER] Processing: {file_path}")
-
     # Use cached model - MASSIVE performance gain
     model = get_cached_model()
-
     # Determine optimal settings based on hardware
     device = "cuda" if torch.cuda.is_available() else "cpu"
     use_fp16 = torch.cuda.is_available()  # Use FP16 on GPU for 2x speed
@@ -111,31 +145,33 @@ def run_whisper_transcription_optimized(file_path, progress_callback=None):
         condition_on_previous_text=False,
         fp16=use_fp16,
         # Performance optimizations
-        beam_size=1,           # Faster decoding
-        best_of=1,             # Single pass
-        temperature=0,         # Deterministic output
+        beam_size=1,  # Faster decoding
+        best_of=1,  # Single pass
+        temperature=0,  # Deterministic output
         word_timestamps=False,  # Skip if not needed
         # Aggressive optimizations
         no_speech_threshold=0.6,
         logprob_threshold=-1.0,
-        compression_ratio_threshold=2.4
+        compression_ratio_threshold=2.4,
     )
 
     processing_time = time.time() - start_time
-    audio_duration = raw_result.get('duration', 0)
+    audio_duration = raw_result.get("duration") or duration_hint or 0
     speedup = audio_duration / processing_time if processing_time > 0 else 0
 
-    print(f"⚡ Processing speed: {speedup:.2f}x real-time ({processing_time:.1f}s for {audio_duration:.1f}s audio)")
+    print(
+        f"⚡ Processing speed: {speedup:.2f}x real-time "
+        f"({processing_time:.1f}s for {audio_duration:.1f}s audio)"
+    )
 
     # Minimal result processing
-    result = {
+    return {
         "segments": raw_result["segments"],
         "text": raw_result["text"],
         "processing_time": processing_time,
-        "speedup": speedup
+        "speedup": speedup,
     }
 
-    return result
 
 def save_transcription_optimized(result, file_path, selected_format):
     """Optimized file saving with minimal I/O"""
@@ -155,13 +191,13 @@ def save_transcription_optimized(result, file_path, selected_format):
 
     return out_path
 
+
 def export_subtitles_fast(segments, out_path, fmt="srt"):
     """Optimized subtitle export with buffering"""
     lines = []
 
     if fmt == "vtt":
         lines.append("WEBVTT\n\n")
-
     for i, seg in enumerate(segments, 1):
         if fmt in {"srt", "vtt"}:
             start = format_timestamp(seg["start"], sep=":" if fmt == "vtt" else ",")
@@ -172,10 +208,12 @@ def export_subtitles_fast(segments, out_path, fmt="srt"):
     with open(out_path, "w", encoding="utf-8", buffering=8192) as f:
         f.writelines(lines)
 
+
 def cleanup_ui(btn, pbar):
     btn.config(state=tk.NORMAL)
     pbar.stop()
     pbar.grid_remove()
+
 
 def perform_transcription_optimized(file_path, output_text, window, pbar, btn):
     """Optimized transcription pipeline"""
@@ -199,16 +237,18 @@ def perform_transcription_optimized(file_path, output_text, window, pbar, btn):
         window.update_idletasks()
 
         # Core transcription
-        result = run_whisper_transcription_optimized(cleaned_path)
+        result = run_whisper_transcription_optimized(
+            cleaned_path, duration_hint=duration
+        )
 
         # Save results
         selected_format = format_var.get()
         out_path = save_transcription_optimized(result, file_path, selected_format)
 
         # Final UI update
-        speedup = result.get('speedup', 0)
-        processing_time = result.get('processing_time', 0)
-        output_text.insert(tk.END, f"\n✅ Complete! Speed: {speedup:.1f}x real-time\n")
+        speedup = result.get("speedup", 0)
+        processing_time = result.get("processing_time", 0)
+        output_text.insert(tk.END, f"\n✅ Complete! Speed: {speedup:.2f}x real-time\n")
         output_text.insert(tk.END, f"📁 Saved: {out_path}\n")
         output_text.insert(tk.END, f"⚡ Processing time: {processing_time:.1f}s\n\n")
 
@@ -216,6 +256,8 @@ def perform_transcription_optimized(file_path, output_text, window, pbar, btn):
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
+
+        input("🔚 Press Enter to exit...")  # Console wait
 
     except Exception as e:
         messagebox.showerror("Error", f"Transcription failed:\n{str(e)}")
@@ -225,9 +267,10 @@ def perform_transcription_optimized(file_path, output_text, window, pbar, btn):
         if cleaned_path and cleaned_path != file_path and os.path.exists(cleaned_path):
             try:
                 os.remove(cleaned_path)
-            except:
+            except Exception:
                 pass
         cleanup_ui(btn, pbar)
+
 
 def transcribe_file():
     file_path = filedialog.askopenfilename(
@@ -235,7 +278,6 @@ def transcribe_file():
     )
     if not file_path:
         return
-
     output_text.delete("1.0", tk.END)
     transcribe_button.config(state=tk.DISABLED)
     progress_bar.grid(row=0, column=3, padx=10)
@@ -245,8 +287,9 @@ def transcribe_file():
     threading.Thread(
         target=perform_transcription_optimized,
         args=(file_path, output_text, window, progress_bar, transcribe_button),
-        daemon=True
+        daemon=True,
     ).start()
+
 
 def on_file_drop(event):
     file_path = window.tk.splitlist(event.data)[0].strip("{}")
@@ -262,11 +305,13 @@ def on_file_drop(event):
     threading.Thread(
         target=perform_transcription_optimized,
         args=(file_path, output_text, window, progress_bar, transcribe_button),
-        daemon=True
+        daemon=True,
     ).start()
+
 
 def preload_model():
     """Preload model in background for instant first use"""
+
     def load():
         try:
             get_cached_model()
@@ -275,6 +320,7 @@ def preload_model():
             output_text.insert(tk.END, f"⚠️ Model preload failed: {e}\n")
 
     threading.Thread(target=load, daemon=True).start()
+
 
 # GUI Setup
 window = TkinterDnD.Tk()
@@ -285,15 +331,22 @@ frame = tk.Frame(window)
 frame.pack(pady=10)
 
 transcribe_button = tk.Button(
-    frame, text="📂 Select Audio File", command=transcribe_file,
-    font=("Arial", 14), bg="#4CAF50", fg="white"
+    frame,
+    text="📂 Select Audio File",
+    command=transcribe_file,
+    font=("Arial", 14),
+    bg="#4CAF50",
+    fg="white",
 )
 transcribe_button.grid(row=0, column=0, padx=10)
 
 format_var = tk.StringVar(value="txt")
 format_menu = ttk.Combobox(
-    frame, textvariable=format_var, values=["txt", "srt", "vtt"],
-    width=10, font=("Arial", 12)
+    frame,
+    textvariable=format_var,
+    values=["txt", "srt", "vtt"],
+    width=10,
+    font=("Arial", 12),
 )
 format_menu.grid(row=0, column=1)
 
@@ -302,8 +355,12 @@ label.grid(row=0, column=2, padx=5)
 
 # Preload button for instant processing
 preload_btn = tk.Button(
-    frame, text="🚀 Preload AI", command=preload_model,
-    font=("Arial", 10), bg="#2196F3", fg="white"
+    frame,
+    text="🚀 Preload AI",
+    command=preload_model,
+    font=("Arial", 10),
+    bg="#2196F3",
+    fg="white",
 )
 preload_btn.grid(row=0, column=4, padx=5)
 
@@ -319,10 +376,12 @@ output_text.tag_config("stats", foreground="#FF9800")
 output_text.tag_config("done", foreground="#4CAF50", font=("Consolas", 10, "bold"))
 
 # Welcome message with optimization info
-device_info = "GPU" if torch.cuda.is_available() else "CPU"
 output_text.insert(tk.END, f"🚀 GreekDrop {VERSION} - Optimized Edition\n")
-output_text.insert(tk.END, f"🖥️  Hardware: {device_info} acceleration available\n")
-output_text.insert(tk.END, f"💡 Tip: Click 'Preload AI' for instant processing!\n\n")
+output_text.insert(
+    tk.END,
+    f"🖥️  Hardware: {'GPU' if torch.cuda.is_available() else 'CPU'} acceleration available\n",
+)
+output_text.insert(tk.END, "💡 Tip: Click 'Preload AI' for instant processing!\n\n")
 
 # Drag and drop setup
 window.drop_target_register(DND_FILES)
