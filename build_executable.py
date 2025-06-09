@@ -14,13 +14,6 @@ logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# // Add the following if not there excluded = [
-#     "matplotlib", "mpl_toolkits", "tensorflow", "keras", "jax", "IPython",
-#     "pandas", "scipy", "sklearn", "nltk", "transformers", "notebook", "jupyterlab"
-# ]
-# args.extend([f"--noinclude-{mod}-mode=nofollow" for mod in excluded])
-
-
 EXCLUDED_MODULES = [
     "matplotlib",
     "scipy",
@@ -58,8 +51,6 @@ EXCLUDED_MODULES = [
 
 
 def build_pyinstaller(source_file="optimized_main.py", optimization_level="standard"):
-    # sourcery skip: extract-method
-    """Build executable using PyInstaller"""
     print(f"🔨 Building with PyInstaller ({optimization_level})...")
 
     base_args = [
@@ -82,8 +73,6 @@ def build_pyinstaller(source_file="optimized_main.py", optimization_level="stand
         "tkinterdnd2",
         source_file,
     ]
-
-    # Remove None values
     base_args = [arg for arg in base_args if arg is not None]
 
     if optimization_level in ("standard", "maximum"):
@@ -93,12 +82,10 @@ def build_pyinstaller(source_file="optimized_main.py", optimization_level="stand
                 base_args.append("--strip")
             else:
                 logging.warning("Skipping --strip: 'strip' not found.")
-
             if upx_dir:
                 base_args.extend(["--upx-dir", upx_dir])
             else:
                 logging.warning("UPX not available; skipping --upx-dir")
-
             base_args.append("--noupx")
         else:
             base_args.append("--strip")
@@ -117,7 +104,6 @@ def build_pyinstaller(source_file="optimized_main.py", optimization_level="stand
 
 
 def build_nuitka(source_file="optimized_main.py"):
-    """Build executable using Nuitka (fastest runtime performance)"""
     print("🚀 Building with Nuitka (maximum performance)...")
 
     args = [
@@ -131,7 +117,6 @@ def build_nuitka(source_file="optimized_main.py"):
         "--include-package=torch",
         "--include-package=torchaudio",
         "--include-package=tkinterdnd2",
-        "--nofollow-imports",  # <-- prevents auto-following of unused packages
         "--output-filename=GreekDrop-Ultra.exe",
         "--remove-output",
         source_file,
@@ -148,26 +133,15 @@ def build_nuitka(source_file="optimized_main.py"):
 
 
 def get_upx_path():
-    """Returns UPX path if available or None"""
-    # 1. Check environment variable
     env_upx = os.environ.get("UPX_PATH")
     if env_upx and shutil.which(env_upx):
         logging.info(f"UPX found via UPX_PATH: {env_upx}")
         return os.path.dirname(env_upx)
-
-    # 2. Check common locations and PATH
-    possible_locations = [
-        "upx",  # in PATH
-        "C:\\upx\\upx.exe",
-        "/usr/bin/upx",
-        "/usr/local/bin/upx",
-    ]
-    for path in possible_locations:
+    for path in ["upx", "C:\\upx\\upx.exe", "/usr/bin/upx", "/usr/local/bin/upx"]:
         if shutil.which(path):
             upx_full_path = shutil.which(path)
             logging.info(f"UPX found at: {upx_full_path}")
             return os.path.dirname(upx_full_path)
-
     logging.warning("UPX not found in standard paths or environment.")
     return None
 
@@ -190,51 +164,37 @@ def check_requirements():
             logging.warning(f"{req} not found.")
             missing.append(f"{req}: {install_cmd}")
 
-    # UPX is optional
-    upx_path = get_upx_path()
-    if not upx_path:
-        logging.warning("UPX not found. You can set UPX_PATH or install UPX manually.")
-    else:
+    if upx_path := get_upx_path():
         logging.info(f"UPX available at: {upx_path}")
-
+    else:
+        logging.warning("UPX not found. You can set UPX_PATH or install UPX manually.")
     if missing:
         logging.error("Missing required components:")
         for item in missing:
             logging.error(f"   {item}")
         return False
-
     return True
 
 
 def create_installer_script():
-    """Create a simple installer script"""
     installer_content = """@echo off
 echo ========================================
 echo GreekDrop Optimized Installation
 echo ========================================
 echo.
-
-REM Create application directory
 if not exist "%USERPROFILE%\\GreekDrop" mkdir "%USERPROFILE%\\GreekDrop"
-
-REM Copy executable
 copy "GreekDrop-Optimized.exe" "%USERPROFILE%\\GreekDrop\\"
-
-REM Create desktop shortcut
 echo Creating desktop shortcut...
 powershell "$ws = New-Object -ComObject WScript.Shell; ^
 $s = $ws.CreateShortcut('%USERPROFILE%\\Desktop\\GreekDrop.lnk'); ^
 $s.TargetPath = '%USERPROFILE%\\GreekDrop\\GreekDrop-Optimized.exe'; ^
 $s.Save()"
-
-REM Create start menu entry
 set STARTMENU=%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\GreekDrop
 if not exist "%STARTMENU%" mkdir "%STARTMENU%"
 powershell "$ws = New-Object -ComObject WScript.Shell; ^
 $s = $ws.CreateShortcut('%STARTMENU%\\GreekDrop.lnk'); ^
 $s.TargetPath = '%USERPROFILE%\\GreekDrop\\GreekDrop-Optimized.exe'; ^
 $s.Save()"
-
 echo.
 echo ✅ Installation completed!
 echo.
@@ -244,7 +204,6 @@ echo Start menu entry created
 echo.
 pause
 """
-
     with open("installer.bat", "w") as f:
         f.write(installer_content)
     print("📦 Installer script created: installer.bat")
@@ -253,28 +212,21 @@ pause
 def main():
     print("🚀 GreekDrop Executable Builder")
     print("=" * 40)
-
     if not check_requirements():
         print("\n❌ Please install missing requirements first.")
         return
-
     # Check if source file exists
     source_file = "optimized_main.py"
     if not os.path.exists(source_file):
         print(f"❌ Source file '{source_file}' not found!")
-        print("Please make sure optimized_main.py is in the current directory.")
         return
-
     print("\n📋 Build Options:")
     print("1. PyInstaller - Standard (Recommended)")
     print("2. PyInstaller - Maximum Optimization")
     print("3. Nuitka - Ultra Performance")
     print("4. Build All Versions")
-
     choice = input("\nSelect build option (1-4): ").strip()
-
     success = False
-
     if choice == "1":
         success = build_pyinstaller(source_file, "standard")
     elif choice == "2":
@@ -289,23 +241,19 @@ def main():
     else:
         print("❌ Invalid choice!")
         return
-
     if success:
         create_installer_script()
         print("\n🎉 Build completed successfully!")
         print("\n📁 Generated files:")
-
         if os.path.exists("dist"):
             for file in os.listdir("dist"):
                 if file.endswith(".exe"):
                     size = os.path.getsize(os.path.join("dist", file)) / (1024 * 1024)
                     print(f"   📄 {file} ({size:.1f} MB)")
-
         print("\n💡 Next steps:")
         print("1. Test the executable on a clean system")
         print("2. Run installer.bat to install system-wide")
         print("3. Distribute the executable to users")
-
         print("\n⚡ Performance Tips:")
         print("- First run will be slower due to model loading")
         print("- Use 'Preload AI' button for instant subsequent processing")
