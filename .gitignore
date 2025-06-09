@@ -198,3 +198,5 @@ cython_debug/
 /PERFORMANCE_SUMMARY.md
 /requirements_optimized.txt
 /build_executable.py
+/nuitka-crash-report.xml
+/optimized_main - backup.py
