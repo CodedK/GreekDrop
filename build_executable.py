@@ -14,8 +14,51 @@ logging.basicConfig(
     level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
+# // Add the following if not there excluded = [
+#     "matplotlib", "mpl_toolkits", "tensorflow", "keras", "jax", "IPython",
+#     "pandas", "scipy", "sklearn", "nltk", "transformers", "notebook", "jupyterlab"
+# ]
+# args.extend([f"--noinclude-{mod}-mode=nofollow" for mod in excluded])
+
+
+EXCLUDED_MODULES = [
+    "matplotlib",
+    "scipy",
+    "pandas",
+    "PIL",
+    "cv2",
+    "selenium",
+    "jax",
+    "expecttest",
+    "keras",
+    "tensorflow",
+    "nltk",
+    "transformers",
+    "jupyterlab",
+    "IPython",
+    "botocore",
+    "skimage",
+    "sklearn",
+    "pyarrow",
+    "sqlalchemy",
+    "bokeh",
+    "spacy",
+    "plotly",
+    "notebook",
+    "onnxruntime",
+    "numpy",
+    "sympy",
+    "llvmlite",
+    "pywt",
+    "pyproj",
+    "numba",
+    "statsmodels",
+    "mpl_toolkits",
+]
+
 
 def build_pyinstaller(source_file="optimized_main.py", optimization_level="standard"):
+    # sourcery skip: extract-method
     """Build executable using PyInstaller"""
     print(f"🔨 Building with PyInstaller ({optimization_level})...")
 
@@ -26,7 +69,7 @@ def build_pyinstaller(source_file="optimized_main.py", optimization_level="stand
         "--name",
         "GreekDrop-Optimized",
         "--icon",
-        "icon.ico" if os.path.exists("icon.ico") else None,
+        "greekDrop.ico" if os.path.exists("greekDrop.ico") else None,
         "--add-data",
         "transcriptions;transcriptions",
         "--hidden-import",
@@ -43,41 +86,25 @@ def build_pyinstaller(source_file="optimized_main.py", optimization_level="stand
     # Remove None values
     base_args = [arg for arg in base_args if arg is not None]
 
-    if optimization_level == "minimal":
-        # Fastest build, larger size
-        pass
-    elif optimization_level == "standard":
-        # Balanced optimization
-        base_args.extend(
-            [
-                "--strip",
-                "--exclude-module",
-                "matplotlib",
-                "--exclude-module",
-                "scipy",
-                "--exclude-module",
-                "pandas",
-            ]
-        )
-    elif optimization_level == "maximum":
-        # Maximum optimization, slower build
-        base_args.extend(
-            [
-                "--strip",
-                "--upx-dir",
-                get_upx_path(),
-                "--exclude-module",
-                "matplotlib",
-                "--exclude-module",
-                "scipy",
-                "--exclude-module",
-                "pandas",
-                "--exclude-module",
-                "PIL",
-                "--exclude-module",
-                "cv2",
-            ]
-        )
+    if optimization_level in ("standard", "maximum"):
+        if optimization_level == "maximum":
+            upx_dir = get_upx_path()
+            if shutil.which("strip"):
+                base_args.append("--strip")
+            else:
+                logging.warning("Skipping --strip: 'strip' not found.")
+
+            if upx_dir:
+                base_args.extend(["--upx-dir", upx_dir])
+            else:
+                logging.warning("UPX not available; skipping --upx-dir")
+
+            base_args.append("--noupx")
+        else:
+            base_args.append("--strip")
+
+        for module in EXCLUDED_MODULES:
+            base_args.extend(["--exclude-module", module])
 
     try:
         subprocess.run(base_args, check=True, capture_output=True, text=True)
@@ -98,12 +125,13 @@ def build_nuitka(source_file="optimized_main.py"):
         "-m",
         "nuitka",
         "--onefile",
-        "--windows-disable-console",
+        "--windows-console-mode=disable",
         "--enable-plugin=tk-inter",
         "--include-package=whisper",
         "--include-package=torch",
         "--include-package=torchaudio",
         "--include-package=tkinterdnd2",
+        "--nofollow-imports",  # <-- prevents auto-following of unused packages
         "--output-filename=GreekDrop-Ultra.exe",
         "--remove-output",
         source_file,
@@ -187,7 +215,7 @@ echo ========================================
 echo.
 
 REM Create application directory
-if not exist "%USERPROFILE%\\GreekDrop" mkdir "%USERPROFILE%\\GreekDrop"Extensions: Show Installed Extensions
+if not exist "%USERPROFILE%\\GreekDrop" mkdir "%USERPROFILE%\\GreekDrop"
 
 REM Copy executable
 copy "GreekDrop-Optimized.exe" "%USERPROFILE%\\GreekDrop\\"
@@ -195,16 +223,16 @@ copy "GreekDrop-Optimized.exe" "%USERPROFILE%\\GreekDrop\\"
 REM Create desktop shortcut
 echo Creating desktop shortcut...
 powershell "$ws = New-Object -ComObject WScript.Shell; ^
-$s = $ws.CreateShortcut('%USERPROFILE%\\\\Desktop\\\\GreekDrop.lnk'); ^
-$s.TargetPath = '%USERPROFILE%\\\\GreekDrop\\\\GreekDrop-Optimized.exe'; ^
+$s = $ws.CreateShortcut('%USERPROFILE%\\Desktop\\GreekDrop.lnk'); ^
+$s.TargetPath = '%USERPROFILE%\\GreekDrop\\GreekDrop-Optimized.exe'; ^
 $s.Save()"
 
 REM Create start menu entry
 set STARTMENU=%APPDATA%\\Microsoft\\Windows\\Start Menu\\Programs\\GreekDrop
 if not exist "%STARTMENU%" mkdir "%STARTMENU%"
 powershell "$ws = New-Object -ComObject WScript.Shell; ^
-$s = $ws.CreateShortcut('%STARTMENU%\\\\GreekDrop.lnk'); ^
-$s.TargetPath = '%USERPROFILE%\\\\GreekDrop\\\\GreekDrop-Optimized.exe'; ^
+$s = $ws.CreateShortcut('%STARTMENU%\\GreekDrop.lnk'); ^
+$s.TargetPath = '%USERPROFILE%\\GreekDrop\\GreekDrop-Optimized.exe'; ^
 $s.Save()"
 
 echo.
