@@ -1,131 +1,97 @@
-<p align="center">
-  <img src="logo.png" alt="GreekDrop Logo" width="180"/>
-</p>
+# GreekDrop
 
-<h1 align="center">GreekDrop</h1>
-<p align="center">
-  <b>Transcribe Greek audio to text with blazing speed and simplicity.</b><br>
-  <i>AI-powered. Open source. No cloud required.</i>
-</p>
+GreekDrop is an open-source desktop application that converts Greek audio files to text and subtitles on your own computer.  It is based on the open-source Whisper speech-to-text model and does **all** processing locally – your recordings never leave your machine.
 
 ---
 
-## 🚀 What is GreekDrop?
+## Key Features
 
-**GreekDrop** is a modern, open-source desktop app for transcribing Greek audio files into text and subtitles. Powered by state-of-the-art AI (OpenAI Whisper), it's designed for speed, privacy, and ease of use—no internet connection or cloud upload required.
-
-- **Drag & drop** your audio file, or select it with a click.
-- **Get instant, accurate transcriptions** in Greek.
-- **Export** as plain text, SRT, or VTT subtitles.
-- **Runs locally** on your PC—your audio never leaves your machine.
-
----
-
-## 🏆 Why You'll Love It
-
-- **Lightning Fast**: Optimized for both CPU and GPU. Model loads once, so batch jobs fly.
-- **Privacy First**: All processing is local. No data leaves your computer.
-- **No Hassle**: No accounts, no subscriptions, no cloud. Just run and transcribe.
-- **Beautifully Simple**: Minimal, intuitive interface. Drag, drop, done.
-- **Open Source**: Hack it, improve it, or use it as you wish.
+* Accurate transcription of Greek speech (Whisper medium model by default)
+* Runs entirely offline – privacy by design
+* GPU acceleration when a CUDA-compatible GPU is available
+* Clean user interface: drag-and-drop or classic "Open file" dialogue
+* Export formats: Plain text (`.txt`), SubRip (`.srt`), WebVTT (`.vtt`)
+* Batch-friendly: the model is loaded once and reused for subsequent files
+* Minimal mandatory dependencies (Python ≥ 3.9 and FFmpeg).  Optional packages enable AI and GPU features.
 
 ---
 
-## ✨ Features
+## Requirements
 
-- 🎙️ **Greek Language AI**: Best-in-class transcription for Greek audio.
-- 🖥️ **GPU Acceleration**: Up to 12x real-time speed on modern NVIDIA GPUs.
-- 📁 **Multi-format Export**: TXT, SRT, and VTT subtitle support.
-- 🧠 **Smart Preprocessing**: Automatic silence removal and audio cleanup.
-- 🔄 **Batch Ready**: Model loads once for many files—perfect for heavy workloads.
-- 🛠️ **Minimal Dependencies**: Works with just Python and FFmpeg. AI features auto-disable if missing.
+| Purpose             | Package / Tool                                | Mandatory |
+| ------------------- | --------------------------------------------- | --------- |
+| Core application    | Python ≥ 3.9                                 | ✔︎      |
+| Audio processing    | FFmpeg                                        | ✔︎      |
+| AI transcription    | `openai-whisper`, `torch`, `torchaudio` | optional  |
+| Drag & drop support | `tkinterdnd2`                               | optional  |
 
----
-
-## 🖼️ Screenshot
-
-<p align="center">
-  <img src="screenshot.png" alt="GreekDrop Screenshot" width="600"/>
-</p>
+> If the optional dependencies are missing GreekDrop will still start, but will fall back to the most basic transcription method that is available on the system.
 
 ---
 
-## ⚡ Quick Start
+## Installation
 
-1. **Install Python 3.9+** and [FFmpeg](https://ffmpeg.org/download.html).
-2. **Install dependencies:**
-   ```bash
-   pip install -r requirements_optimized.txt
-   ```
-3. **Run the app:**
-   ```bash
-   python optimized_main.py
-   ```
-4. *(Optional)* For GPU acceleration:
-   ```bash
-   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
-   ```
+1. Clone or download this repository.
+2. Install mandatory and (optionally) AI dependencies:
 
----
+```bash
+# mandatory
+pip install ffmpeg-python
 
-## 🖱️ Usage
+# add AI and GPU support (recommended)
+pip install openai-whisper torch torchaudio
 
-- **Drag & drop** your audio file onto the app, or click "Select Audio File."
-- Choose your **output format** (TXT, SRT, VTT).
-- Click **Preload AI** for instant processing (loads the model once).
-- Your transcription appears in seconds. Export and enjoy!
+# optional drag & drop for the GUI
+pip install tkinterdnd2
+```
+
+Make sure FFmpeg is on your system `PATH` (Windows users can place `ffmpeg.exe` next to `python.exe` or add the FFmpeg bin directory to the PATH environment variable).
 
 ---
 
-## 🧩 Advanced
+## Quick Start
 
-- **Build a standalone .exe:**
-  Run:
-  ```bash
-  python build_executable.py
-  ```
-  Distribute the resulting file—no Python required!
+```bash
+python optimized_main.py
+```
 
-- **Minimal mode:**
-  If AI dependencies are missing, GreekDrop falls back to basic transcription (if possible).
-
----
-
-## 🛡️ Privacy & Security
-
-- **All processing is local.**
-  Your audio and transcriptions never leave your device.
+1. Click **Select Audio File** (or drag a file on the window if drag-and-drop is enabled).
+2. Choose an output format (TXT / SRT / VTT).
+3. Press **Preload AI** once per session if you plan to transcribe many files – this avoids repeated model loading.
+4. The transcription and export file are saved in the `transcriptions` folder.
 
 ---
 
-## 💡 Interesting Facts
+## Command Line Use
 
-- GreekDrop uses the same AI model as OpenAI's Whisper, but runs entirely on your hardware.
-- With a modern GPU, you can transcribe an hour of audio in just a few minutes.
-- The app is designed to degrade gracefully: if you're missing AI libraries, it still works for basic needs.
-- The logo combines a drop (for "drop your file") and a waveform (for audio)—simple, memorable, and meaningful.
+GreekDrop is primarily a GUI tool.  If you need automated, headless processing you can import `optimized.py` in your own scripts or build a command-line wrapper, the transcription logic is contained in standalone functions.
 
 ---
 
-## 🤝 Contributing
+## Building a Stand-alone Executable (Windows)
 
-Pull requests, feature ideas, and bug reports are welcome!
-See [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+The repository contains a helper script that uses PyInstaller or Nuitka.
 
----
+```bash
+python build_executable.py
+```
 
-## 📄 License
-
-MIT License.
-See [LICENSE](LICENSE) for details.
+The resulting `.exe` can be distributed without requiring Python on the target system.
 
 ---
 
-<p align="center">
-  <i>GreekDrop – Fast, private, and open Greek audio transcription for everyone.</i>
-</p>
+## Development
+
+* Code style: Flake8 compliant (max line length 100).
+* Virtual environments are recommended (e.g. `python -m venv .venv`).
+* Tests and continuous integration are not yet configured – contributions welcome.
 
 ---
 
-**Tip:**
-If you like GreekDrop, star the repo and share it with your friends!
+## License
+
+MIT License – see the [LICENSE](LICENSE) file for details.
+
+---
+
+GreekDrop is maintained by volunteers.  Feedback, bug reports and pull requests are appreciated.
