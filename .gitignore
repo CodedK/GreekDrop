@@ -1,3 +1,6 @@
+# Backup directory for old code
+backup_old_code/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

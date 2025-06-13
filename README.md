@@ -1,97 +1,193 @@
-# GreekDrop
+# 🎯 GreekDrop Audio Transcription
 
-GreekDrop is an open-source desktop application that converts Greek audio files to text and subtitles on your own computer.  It is based on the open-source Whisper speech-to-text model and does **all** processing locally – your recordings never leave your machine.
+A modern, modular Python application for transcribing Greek audio files using AI-powered speech recognition.
 
----
+## ✨ Features
 
-## Key Features
+- **🧠 AI-Powered Transcription**: OpenAI Whisper for high-quality Greek speech recognition
+- **🎨 Modern UI**: Material Design-inspired interface with ttkbootstrap
+- **📁 Drag & Drop**: Intuitive file handling with visual feedback
+- **⚡ GPU Acceleration**: CUDA support for faster processing
+- **📝 Multiple Export Formats**: TXT, SRT, VTT subtitle formats
+- **🔄 Fallback Support**: Graceful degradation when dependencies are missing
+- **🏗️ Modular Architecture**: Clean, maintainable codebase
 
-* Accurate transcription of Greek speech (Whisper medium model by default)
-* Runs entirely offline – privacy by design
-* GPU acceleration when a CUDA-compatible GPU is available
-* Clean user interface: drag-and-drop or classic "Open file" dialogue
-* Export formats: Plain text (`.txt`), SubRip (`.srt`), WebVTT (`.vtt`)
-* Batch-friendly: the model is loaded once and reused for subsequent files
-* Minimal mandatory dependencies (Python ≥ 3.9 and FFmpeg).  Optional packages enable AI and GPU features.
+## 🏗️ Architecture
 
----
+GreekDrop follows a clean, modular architecture for maintainability and extensibility:
 
-## Requirements
-
-| Purpose             | Package / Tool                                | Mandatory |
-| ------------------- | --------------------------------------------- | --------- |
-| Core application    | Python ≥ 3.9                                 | ✔︎      |
-| Audio processing    | FFmpeg                                        | ✔︎      |
-| AI transcription    | `openai-whisper`, `torch`, `torchaudio` | optional  |
-| Drag & drop support | `tkinterdnd2`                               | optional  |
-
-> If the optional dependencies are missing GreekDrop will still start, but will fall back to the most basic transcription method that is available on the system.
-
----
-
-## Installation
-
-1. Clone or download this repository.
-2. Install mandatory and (optionally) AI dependencies:
-
-```bash
-# mandatory
-pip install ffmpeg-python
-
-# add AI and GPU support (recommended)
-pip install openai-whisper torch torchaudio
-
-# optional drag & drop for the GUI
-pip install tkinterdnd2
+```
+greekdrop/
+├── main.py              # 🚀 Application entry point
+├── config/              # ⚙️ Configuration and settings
+│   ├── __init__.py
+│   └── settings.py      # Dependencies, constants, global state
+├── ui/                  # 🎨 User interface components
+│   ├── __init__.py
+│   └── layout.py        # Modern Material Design UI
+├── logic/               # 🧠 Core transcription logic
+│   ├── __init__.py
+│   ├── transcriber.py   # AI transcription engine
+│   └── preload.py       # Async model loading
+├── utils/               # 🔧 File handling and utilities
+│   ├── __init__.py
+│   └── file_utils.py    # Audio processing, file I/O
+└── requirements.txt     # 📦 Dependencies
 ```
 
-Make sure FFmpeg is on your system `PATH` (Windows users can place `ffmpeg.exe` next to `python.exe` or add the FFmpeg bin directory to the PATH environment variable).
+### Module Responsibilities
 
----
+- **`main.py`**: Clean entry point that initializes the application
+- **`config/`**: Settings, constants, dependency management
+- **`ui/`**: Modern interface with responsive Material Design
+- **`logic/`**: AI transcription engine with Whisper and fallbacks
+- **`utils/`**: File processing, audio conversion, export utilities
 
-## Quick Start
+## 🚀 Quick Start
+
+### Prerequisites
+
+1. **Python 3.8+** with tkinter (usually included)
+2. **FFmpeg** installed on your system:
+   - **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html)
+   - **macOS**: `brew install ffmpeg`
+   - **Ubuntu/Debian**: `sudo apt install ffmpeg`
+
+### Installation
+
+1. **Clone the repository**:
+   ```bash
+   git clone <repository-url>
+   cd GreekDrop
+   ```
+
+2. **Install dependencies**:
+   ```bash
+   # Full installation (recommended)
+   pip install -r requirements.txt
+
+   # Or minimal installation (no AI features)
+   pip install ttkbootstrap tkinterdnd2 SpeechRecognition ffmpeg-python
+   ```
+
+3. **For GPU acceleration** (optional):
+   ```bash
+   pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
+   ```
+
+4. **Run the application**:
+   ```bash
+   python main.py
+   ```
+
+## 📦 Dependencies
+
+| Category | Package | Purpose | Required |
+|----------|---------|---------|----------|
+| **UI** | `ttkbootstrap` | Modern Material Design interface | Recommended |
+| **UI** | `tkinterdnd2` | Drag & drop functionality | Recommended |
+| **AI** | `openai-whisper` | High-quality AI transcription | Optional |
+| **AI** | `torch` + `torchaudio` | GPU acceleration | Optional |
+| **Fallback** | `SpeechRecognition` | Backup transcription method | Recommended |
+| **Audio** | `ffmpeg-python` | Audio processing | Required |
+
+### Dependency Tiers
+
+- **🎯 Core**: Works with just Python + FFmpeg
+- **🎨 Enhanced**: + ttkbootstrap + tkinterdnd2 for modern UI
+- **🧠 AI-Powered**: + openai-whisper for best transcription
+- **⚡ GPU-Accelerated**: + torch + torchaudio for speed
+
+## 🎮 Usage
+
+### Basic Operation
+
+1. **Launch** the application: `python main.py`
+2. **Select** audio file via button or drag & drop
+3. **Choose** export format (TXT, SRT, VTT)
+4. **Click** transcribe and wait for results
+5. **Find** output file saved next to original audio
+
+### Supported Formats
+
+- **Input**: WAV, MP3, M4A, FLAC, OGG, AAC, MP4, AVI, MOV
+- **Output**:
+  - **TXT**: Full text with metadata and timestamps
+  - **SRT**: Standard subtitle format
+  - **VTT**: WebVTT subtitle format
+
+### Performance Tips
+
+- **Preload AI** model for faster subsequent transcriptions
+- **Use GPU** acceleration for 3-5x speed improvement
+- **Convert to WAV** for best compatibility
+- **16kHz mono** audio works best with the AI model
+
+## 🔧 Development
+
+### Code Style
+
+The codebase follows professional Python standards:
+
+- **PEP 8** compliant formatting
+- **Type hints** where applicable
+- **Docstrings** for all public functions
+- **Modular design** with clear separation of concerns
+- **Error handling** with graceful degradation
+
+### Adding Features
+
+1. **UI changes**: Modify `ui/layout.py`
+2. **Transcription logic**: Update `logic/transcriber.py`
+3. **File handling**: Enhance `utils/file_utils.py`
+4. **Configuration**: Adjust `config/settings.py`
+
+### Testing
 
 ```bash
-python optimized_main.py
+# Run the application
+python main.py
+
+# Test specific modules (when test suite is added)
+python -m pytest tests/
 ```
 
-1. Click **Select Audio File** (or drag a file on the window if drag-and-drop is enabled).
-2. Choose an output format (TXT / SRT / VTT).
-3. Press **Preload AI** once per session if you plan to transcribe many files – this avoids repeated model loading.
-4. The transcription and export file are saved in the `transcriptions` folder.
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch: `git checkout -b feature-name`
+3. Make changes following the code style
+4. Test thoroughly with different audio files
+5. Submit a pull request
+
+## 📄 License
+
+MIT License - see [LICENSE](LICENSE) for details.
+
+## 🆘 Troubleshooting
+
+### Common Issues
+
+**"FFmpeg not found"**
+- Install FFmpeg and ensure it's in your system PATH
+
+**"No module named 'ttkbootstrap'"**
+- Install with: `pip install ttkbootstrap`
+
+**"Whisper model download fails"**
+- Check internet connection and disk space
+- Models are downloaded to `~/.cache/whisper/`
+
+**"CUDA out of memory"**
+- Use CPU mode or reduce audio file length
+- Close other GPU-intensive applications
+
+### Performance Issues
+
+- **Slow transcription**: Install GPU acceleration or use smaller audio files
+- **High memory usage**: Enable garbage collection in settings
+- **UI freezing**: Ensure background processing is working correctly
 
 ---
 
-## Command Line Use
-
-GreekDrop is primarily a GUI tool.  If you need automated, headless processing you can import `optimized.py` in your own scripts or build a command-line wrapper, the transcription logic is contained in standalone functions.
-
----
-
-## Building a Stand-alone Executable (Windows)
-
-The repository contains a helper script that uses PyInstaller or Nuitka.
-
-```bash
-python build_executable.py
-```
-
-The resulting `.exe` can be distributed without requiring Python on the target system.
-
----
-
-## Development
-
-* Code style: Flake8 compliant (max line length 100).
-* Virtual environments are recommended (e.g. `python -m venv .venv`).
-* Tests and continuous integration are not yet configured – contributions welcome.
-
----
-
-## License
-
-MIT License – see the [LICENSE](LICENSE) file for details.
-
----
-
-GreekDrop is maintained by volunteers.  Feedback, bug reports and pull requests are appreciated.
+**Built with ❤️ for Greek language transcription**

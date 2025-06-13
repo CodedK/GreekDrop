@@ -1,0 +1,50 @@
+# GreekDrop Audio Transcription App - Complete Dependencies
+# Install with: pip install -r requirements.txt
+
+# ===== CORE DEPENDENCIES (Required) =====
+# Basic Python libraries - usually included with Python
+# tkinter  # Built-in with Python
+
+# ===== MODERN UI DEPENDENCIES (Recommended) =====
+# For beautiful Material Design-inspired interface
+ttkbootstrap>=1.10.1
+
+# For drag & drop functionality
+tkinterdnd2>=0.3.0
+
+# ===== AI TRANSCRIPTION DEPENDENCIES (Optional but recommended) =====
+# Full AI transcription with Whisper
+openai-whisper>=20231117
+
+# GPU acceleration (large download - install separately if needed)
+# torch>=2.0.0
+# torchaudio>=2.0.0
+
+# ===== FALLBACK TRANSCRIPTION (Lightweight alternative) =====
+# Fallback method when Whisper is not available
+SpeechRecognition>=3.10.0
+
+# ===== AUDIO PROCESSING (Required for core functionality) =====
+# FFmpeg Python wrapper (requires FFmpeg installed on system)
+ffmpeg-python>=0.2.0
+
+# ===== ADDITIONAL UTILITIES =====
+# For enhanced audio processing and metadata
+# pydub>=0.25.1  # Optional - for additional audio format support
+
+# ===== DEVELOPMENT DEPENDENCIES (Optional) =====
+# Code formatting and linting
+# black>=23.0.0
+# flake8>=6.0.0
+
+# ===== INSTALLATION NOTES =====
+# 1. FFmpeg must be installed separately on your system
+#    - Windows: Download from https://ffmpeg.org/download.html
+#    - macOS: brew install ffmpeg
+#    - Ubuntu/Debian: sudo apt install ffmpeg
+#
+# 2. For GPU acceleration, install PyTorch separately:
+#    pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
+#
+# 3. For minimal installation (no AI features):
+#    pip install ttkbootstrap tkinterdnd2 SpeechRecognition ffmpeg-python
