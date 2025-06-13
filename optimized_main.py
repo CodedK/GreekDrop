@@ -125,7 +125,9 @@ def get_audio_info_simple(file_path):
 
 
 def run_fallback_transcription(file_path):
-    """Fallback transcription using system speech recognition if available"""
+    """Enhanced fallback transcription with proper timing"""
+    start_time = time.time()
+
     try:
         # Try using system speech recognition as fallback
         import speech_recognition as sr
@@ -135,31 +137,77 @@ def run_fallback_transcription(file_path):
         # Convert to WAV first if needed
         wav_path = convert_to_wav_simple(file_path)
 
+        # Get actual audio duration
+        audio_duration = get_audio_duration(wav_path or file_path)
+
         with sr.AudioFile(wav_path) as source:
             audio = r.record(source)
 
         text = r.recognize_google(audio, language="el-GR")
+        processing_time = time.time() - start_time
+        speedup = (
+            audio_duration / processing_time
+            if processing_time > 0 and audio_duration > 0
+            else 0
+        )
+
+        # Create reasonable segments for the fallback
+        segments = []
+        if text.strip():
+            # Split text into sentences for better segments
+            sentences = [s.strip() for s in text.split(".") if s.strip()]
+            if not sentences:
+                sentences = [text.strip()]
+
+            segment_duration = (
+                audio_duration / len(sentences) if sentences else audio_duration
+            )
+
+            for i, sentence in enumerate(sentences):
+                start = i * segment_duration
+                end = min((i + 1) * segment_duration, audio_duration)
+                segments.append(
+                    {
+                        "start": start,
+                        "end": end,
+                        "text": sentence + ("." if not sentence.endswith(".") else ""),
+                    }
+                )
+
         return {
             "text": text,
-            "segments": [{"start": 0, "end": 60, "text": text}],
-            "processing_time": 1.0,
-            "speedup": 1.0,
+            "segments": segments,
+            "processing_time": processing_time,
+            "speedup": speedup,
+            "audio_duration": audio_duration,
         }
+
     except ImportError:
-        return {
-            "text": "[Transcription requires either OpenAI Whisper or SpeechRecognition library]\n"
+        processing_time = time.time() - start_time
+        error_text = (
+            "[Transcription requires either OpenAI Whisper or SpeechRecognition library]\n"
             "Install with: pip install openai-whisper\n"
-            "or: pip install SpeechRecognition",
-            "segments": [],
-            "processing_time": 0,
-            "speedup": 0,
-        }
-    except Exception as e:
+            "or: pip install SpeechRecognition"
+        )
         return {
-            "text": f"[Transcription failed: {e}]",
-            "segments": [],
-            "processing_time": 0,
+            "text": error_text,
+            "segments": [{"start": 0, "end": 5, "text": error_text}],
+            "processing_time": processing_time,
             "speedup": 0,
+            "audio_duration": 5,
+        }
+
+    except Exception as e:
+        processing_time = time.time() - start_time
+        audio_duration = get_audio_duration(file_path)
+        error_text = f"[Transcription failed: {e}]"
+
+        return {
+            "text": error_text,
+            "segments": [{"start": 0, "end": audio_duration or 5, "text": error_text}],
+            "processing_time": processing_time,
+            "speedup": 0,
+            "audio_duration": audio_duration or 5,
         }
 
 
@@ -259,7 +307,7 @@ def run_whisper_transcription_optimized(file_path, duration_hint=None):
 
 
 def save_transcription_simple(result, file_path, selected_format):
-    """Simple file saving - no dependencies"""
+    """Simple file saving with proper formatting"""
     base_name = os.path.splitext(os.path.basename(file_path))[0]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir = os.path.join(os.getcwd(), "transcriptions")
@@ -269,25 +317,86 @@ def save_transcription_simple(result, file_path, selected_format):
     out_path = os.path.join(out_dir, filename)
 
     if selected_format == "txt":
-        with open(out_path, "w", encoding="utf-8") as f:
-            f.write(result["text"])
+        export_structured_text(result, out_path)
     else:
         export_subtitles_simple(result["segments"], out_path, fmt=selected_format)
 
     return out_path
 
 
+def export_structured_text(result, out_path):
+    """Export structured text with timestamps and metadata"""
+    with open(out_path, "w", encoding="utf-8") as f:
+        # Header with metadata
+        f.write("=" * 60 + "\n")
+        f.write("TRANSCRIPTION RESULT\n")
+        f.write("=" * 60 + "\n")
+        f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+
+        if result.get("audio_duration"):
+            f.write(f"Audio Duration: {result['audio_duration']:.1f} seconds\n")
+        if result.get("processing_time"):
+            f.write(f"Processing Time: {result['processing_time']:.1f} seconds\n")
+        if result.get("speedup"):
+            f.write(f"Speed: {result['speedup']:.2f}x real-time\n")
+
+        f.write("=" * 60 + "\n\n")
+
+        # Full text
+        f.write("FULL TEXT:\n")
+        f.write("-" * 20 + "\n")
+        f.write(result["text"].strip() + "\n\n")
+
+        # Timestamped segments (if available)
+        if result.get("segments"):
+            f.write("TIMESTAMPED SEGMENTS:\n")
+            f.write("-" * 40 + "\n")
+            for i, seg in enumerate(result["segments"], 1):
+                start_time = format_timestamp(seg["start"])
+                end_time = format_timestamp(seg["end"])
+                text = seg["text"].strip()
+                f.write(f"[{start_time} - {end_time}] {text}\n")
+        else:
+            f.write("(No timestamp information available)\n")
+
+
 def export_subtitles_simple(segments, out_path, fmt="srt"):
-    """Simple subtitle export - no dependencies"""
+    """Enhanced subtitle export with proper formatting"""
+    if not segments:
+        # Create minimal file if no segments
+        with open(out_path, "w", encoding="utf-8") as f:
+            if fmt == "vtt":
+                f.write("WEBVTT\n\n")
+                f.write("NOTE No timestamped segments available\n\n")
+            else:
+                f.write(
+                    "1\n00:00:00,000 --> 00:00:01,000\n(No timestamped segments available)\n\n"
+                )
+        return
+
     with open(out_path, "w", encoding="utf-8") as f:
         if fmt == "vtt":
             f.write("WEBVTT\n\n")
 
         for i, seg in enumerate(segments, 1):
             if fmt in {"srt", "vtt"}:
-                start = format_timestamp(seg["start"], sep=":" if fmt == "vtt" else ",")
-                end = format_timestamp(seg["end"], sep=":" if fmt == "vtt" else ",")
-                f.write(f"{i}\n{start} --> {end}\n{seg['text'].strip()}\n\n")
+                # Handle timestamp formatting
+                start_sep = ":" if fmt == "vtt" else ","
+                end_sep = ":" if fmt == "vtt" else ","
+
+                start = format_timestamp(seg["start"], sep=start_sep)
+                end = format_timestamp(seg["end"], sep=end_sep)
+
+                # Clean and validate text
+                text = seg["text"].strip()
+                if not text:
+                    text = "[no text]"
+
+                # Format based on subtitle type
+                if fmt == "srt":
+                    f.write(f"{i}\n{start} --> {end}\n{text}\n\n")
+                elif fmt == "vtt":
+                    f.write(f"{start} --> {end}\n{text}\n\n")
 
 
 def cleanup_ui(btn, pbar):
@@ -371,21 +480,64 @@ def on_file_drop(event):
     if not DRAG_DROP_AVAILABLE:
         return
 
-    file_path = window.tk.splitlist(event.data)[0].strip("{}")
-    if not os.path.isfile(file_path):
-        messagebox.showerror("Error", "File not found.")
-        return
+    try:
+        # Handle different file path formats from drag & drop
+        files = window.tk.splitlist(event.data)
+        if not files:
+            return
 
-    output_text.delete("1.0", tk.END)
-    transcribe_button.config(state=tk.DISABLED)
-    progress_bar.grid(row=0, column=3, padx=10)
-    progress_bar.start()
+        # Get first file and clean the path
+        file_path = files[0]
 
-    threading.Thread(
-        target=perform_transcription_clean,
-        args=(file_path, output_text, window, progress_bar, transcribe_button),
-        daemon=True,
-    ).start()
+        # Remove curly braces and quotes that might be added by the system
+        file_path = file_path.strip("{}").strip('"').strip("'")
+
+        # Convert forward slashes to backslashes on Windows if needed
+        file_path = os.path.normpath(file_path)
+
+        print(f"[DEBUG] Dropped file: {file_path}")
+
+        if not os.path.isfile(file_path):
+            messagebox.showerror("Error", f"File not found: {file_path}")
+            return
+
+        # Check if it's an audio file
+        audio_extensions = (
+            ".wav",
+            ".mp3",
+            ".m4a",
+            ".flac",
+            ".ogg",
+            ".aac",
+            ".mp4",
+            ".avi",
+            ".mov",
+        )
+        if not file_path.lower().endswith(audio_extensions):
+            messagebox.showerror(
+                "Error",
+                "Please drop an audio file (.wav, .mp3, .m4a, .flac, .ogg, .aac)",
+            )
+            return
+
+        output_text.delete("1.0", tk.END)
+        output_text.insert(tk.END, f"📂 Processing: {os.path.basename(file_path)}\n")
+
+        transcribe_button.config(state=tk.DISABLED)
+        progress_bar.grid(row=0, column=3, padx=10)
+        progress_bar.start()
+
+        threading.Thread(
+            target=perform_transcription_clean,
+            args=(file_path, output_text, window, progress_bar, transcribe_button),
+            daemon=True,
+        ).start()
+
+    except Exception as e:
+        messagebox.showerror(
+            "Drag & Drop Error", f"Failed to process dropped file: {e}"
+        )
+        print(f"[DEBUG] Drag & drop error: {e}")
 
 
 def preload_model():
@@ -509,13 +661,31 @@ else:
 
 output_text.insert(tk.END, "💡 Click ℹ️ Info for dependency status\n\n")
 
-# Drag and drop setup - only if available
+# Drag and drop setup with visual feedback - only if available
 if DRAG_DROP_AVAILABLE:
     window.drop_target_register(DND_FILES)
     window.dnd_bind("<<Drop>>", on_file_drop)
-    output_text.insert(tk.END, "📁 Drag & drop enabled\n")
+
+    # Add visual feedback for drag & drop
+    def on_drag_enter(event):
+        window.config(bg="#E8F5E8")
+        output_text.config(bg="#F0F8F0")
+        return event.action
+
+    def on_drag_leave(event):
+        window.config(bg="SystemButtonFace")  # Default system color
+        output_text.config(bg="white")
+        return event.action
+
+    window.dnd_bind("<<DragEnter>>", on_drag_enter)
+    window.dnd_bind("<<DragLeave>>", on_drag_leave)
+
+    output_text.insert(tk.END, "📁 Drag & drop enabled - Drop audio files here!\n")
 else:
     output_text.insert(tk.END, "📁 Use file button to select audio\n")
+    output_text.insert(
+        tk.END, "💡 Install tkinterdnd2 for drag & drop: pip install tkinterdnd2\n"
+    )
 
 if __name__ == "__main__":
     # Show dependency status on startup
