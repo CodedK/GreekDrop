@@ -11,6 +11,16 @@ import warnings
 from datetime import datetime
 from tkinter import filedialog, messagebox, ttk
 
+# Modern UI styling - graceful fallback
+try:
+    import ttkbootstrap as ttk_bs
+
+    MODERN_UI_AVAILABLE = True
+except ImportError:
+    MODERN_UI_AVAILABLE = False
+    print("⚠️ ttkbootstrap not available - using standard styling")
+    # Install with: pip install ttkbootstrap
+
 # Optional heavy dependencies - graceful fallback if not available
 try:
     import torch
@@ -48,8 +58,16 @@ warnings.filterwarnings(
 _model_cache = None
 _model_lock = threading.Lock()
 
+# Global UI variables
+window = None
+output_text = None
+transcribe_button = None
+format_var = None
+format_menu = None
+progress_bar = None
 
-def check_dependencies():
+
+def validate_system_dependencies():
     """Check which dependencies are available and inform user"""
     status = {
         "torch": TORCH_AVAILABLE,
@@ -65,7 +83,7 @@ def check_dependencies():
     return status
 
 
-def get_cached_model():
+def load_cached_whisper_model():
     """Load model once and cache it globally - only if whisper available"""
     global _model_cache
     if not WHISPER_AVAILABLE:
@@ -82,7 +100,7 @@ def get_cached_model():
         return _model_cache
 
 
-def format_timestamp(seconds: float, sep=":") -> str:
+def convert_seconds_to_timestamp(seconds: float, sep=":") -> str:
     """Format seconds to HH:MM:SS - no dependencies"""
     h = int(seconds // 3600)
     m = int((seconds % 3600) // 60)
@@ -90,7 +108,7 @@ def format_timestamp(seconds: float, sep=":") -> str:
     return f"{h:02}{sep}{m:02}{sep}{s:02}"
 
 
-def get_audio_duration(file_path):
+def extract_audio_duration_ffprobe(file_path):
     """Get audio duration in seconds - requires only FFprobe"""
     try:
         cmd = [
@@ -113,10 +131,10 @@ def get_audio_duration(file_path):
         return 0.0
 
 
-def get_audio_info_simple(file_path):
+def extract_basic_audio_metadata(file_path):
     """Simple audio info extraction - requires only FFprobe"""
     try:
-        duration = get_audio_duration(file_path)
+        duration = extract_audio_duration_ffprobe(file_path)
         if duration > 0:
             return f"📊 Duration: {duration:.1f}s"
         return "📊 Could not read audio info"
@@ -124,7 +142,7 @@ def get_audio_info_simple(file_path):
         return f"📊 Audio info error: {e}"
 
 
-def run_fallback_transcription(file_path):
+def execute_fallback_transcription(file_path):
     """Enhanced fallback transcription with proper timing"""
     start_time = time.time()
 
@@ -135,10 +153,10 @@ def run_fallback_transcription(file_path):
         r = sr.Recognizer()
 
         # Convert to WAV first if needed
-        wav_path = convert_to_wav_simple(file_path)
+        wav_path = convert_audio_to_wav(file_path)
 
         # Get actual audio duration
-        audio_duration = get_audio_duration(wav_path or file_path)
+        audio_duration = extract_audio_duration_ffprobe(wav_path or file_path)
 
         with sr.AudioFile(wav_path) as source:
             audio = r.record(source)
@@ -199,7 +217,7 @@ def run_fallback_transcription(file_path):
 
     except Exception as e:
         processing_time = time.time() - start_time
-        audio_duration = get_audio_duration(file_path)
+        audio_duration = extract_audio_duration_ffprobe(file_path)
         error_text = f"[Transcription failed: {e}]"
 
         return {
@@ -211,7 +229,7 @@ def run_fallback_transcription(file_path):
         }
 
 
-def convert_to_wav_simple(input_path):
+def convert_audio_to_wav(input_path):
     """Simple audio conversion - requires only FFmpeg"""
     if input_path.lower().endswith(".wav"):
         return input_path
@@ -230,23 +248,23 @@ def convert_to_wav_simple(input_path):
         return input_path
 
 
-def run_transcription_smart(file_path, duration_hint=None):
+def execute_intelligent_transcription(file_path, duration_hint=None):
     """Smart transcription - uses best available method"""
     print(f"[TRANSCRIPTION] Processing: {file_path}")
 
     if WHISPER_AVAILABLE:
-        return run_whisper_transcription_optimized(file_path, duration_hint)
+        return execute_whisper_transcription(file_path, duration_hint)
     else:
         print("🔄 Using fallback transcription method...")
-        return run_fallback_transcription(file_path)
+        return execute_fallback_transcription(file_path)
 
 
-def run_whisper_transcription_optimized(file_path, duration_hint=None):
+def execute_whisper_transcription(file_path, duration_hint=None):
     """Optimized Whisper transcription - only if dependencies available"""
     if not WHISPER_AVAILABLE:
-        return run_fallback_transcription(file_path)
+        return execute_fallback_transcription(file_path)
 
-    model = get_cached_model()
+    model = load_cached_whisper_model()
     device = "cuda" if TORCH_AVAILABLE and torch.cuda.is_available() else "cpu"
     use_fp16 = TORCH_AVAILABLE and torch.cuda.is_available()
 
@@ -254,7 +272,7 @@ def run_whisper_transcription_optimized(file_path, duration_hint=None):
 
     # Get actual audio duration for speed calculation
     if duration_hint is None:
-        duration_hint = get_audio_duration(file_path)
+        duration_hint = extract_audio_duration_ffprobe(file_path)
 
     start_time = time.time()
     raw_result = model.transcribe(
@@ -306,7 +324,7 @@ def run_whisper_transcription_optimized(file_path, duration_hint=None):
     }
 
 
-def save_transcription_simple(result, file_path, selected_format):
+def save_transcription_to_file(result, file_path, selected_format):
     """Simple file saving with proper formatting"""
     base_name = os.path.splitext(os.path.basename(file_path))[0]
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -317,14 +335,14 @@ def save_transcription_simple(result, file_path, selected_format):
     out_path = os.path.join(out_dir, filename)
 
     if selected_format == "txt":
-        export_structured_text(result, out_path)
+        export_structured_text_format(result, out_path)
     else:
-        export_subtitles_simple(result["segments"], out_path, fmt=selected_format)
+        export_subtitle_format(result["segments"], out_path, fmt=selected_format)
 
     return out_path
 
 
-def export_structured_text(result, out_path):
+def export_structured_text_format(result, out_path):
     """Export structured text with timestamps and metadata"""
     with open(out_path, "w", encoding="utf-8") as f:
         # Header with metadata
@@ -352,15 +370,15 @@ def export_structured_text(result, out_path):
             f.write("TIMESTAMPED SEGMENTS:\n")
             f.write("-" * 40 + "\n")
             for i, seg in enumerate(result["segments"], 1):
-                start_time = format_timestamp(seg["start"])
-                end_time = format_timestamp(seg["end"])
+                start_time = convert_seconds_to_timestamp(seg["start"])
+                end_time = convert_seconds_to_timestamp(seg["end"])
                 text = seg["text"].strip()
                 f.write(f"[{start_time} - {end_time}] {text}\n")
         else:
             f.write("(No timestamp information available)\n")
 
 
-def export_subtitles_simple(segments, out_path, fmt="srt"):
+def export_subtitle_format(segments, out_path, fmt="srt"):
     """Enhanced subtitle export with proper formatting"""
     if not segments:
         # Create minimal file if no segments
@@ -384,8 +402,8 @@ def export_subtitles_simple(segments, out_path, fmt="srt"):
                 start_sep = ":" if fmt == "vtt" else ","
                 end_sep = ":" if fmt == "vtt" else ","
 
-                start = format_timestamp(seg["start"], sep=start_sep)
-                end = format_timestamp(seg["end"], sep=end_sep)
+                start = convert_seconds_to_timestamp(seg["start"], sep=start_sep)
+                end = convert_seconds_to_timestamp(seg["end"], sep=end_sep)
 
                 # Clean and validate text
                 text = seg["text"].strip()
@@ -399,35 +417,38 @@ def export_subtitles_simple(segments, out_path, fmt="srt"):
                     f.write(f"{start} --> {end}\n{text}\n\n")
 
 
-def cleanup_ui(btn, pbar):
+def reset_ui_state(btn, pbar):
     """Clean UI state - no dependencies"""
-    btn.config(state=tk.NORMAL)
+    if MODERN_UI_AVAILABLE:
+        btn.configure(state="normal")
+    else:
+        btn.config(state=tk.NORMAL)
     pbar.stop()
     pbar.grid_remove()
 
 
-def perform_transcription_clean(file_path, output_text, window, pbar, btn):
+def process_transcription_workflow(file_path, output_text, window, pbar, btn):
     """Clean transcription pipeline with minimal dependencies"""
     temp_file = None
     try:
         output_text.insert(tk.END, f"🚀 GreekDrop {VERSION} - Clean Edition\n")
-        output_text.insert(tk.END, get_audio_info_simple(file_path) + "\n")
+        output_text.insert(tk.END, extract_basic_audio_metadata(file_path) + "\n")
         output_text.insert(tk.END, "🎧 Processing audio...\n")
         window.update_idletasks()
 
         # Simple preprocessing
         if not file_path.lower().endswith(".wav"):
-            temp_file = convert_to_wav_simple(file_path)
+            temp_file = convert_audio_to_wav(file_path)
             processing_file = temp_file
         else:
             processing_file = file_path
 
         # Smart transcription
-        result = run_transcription_smart(processing_file)
+        result = execute_intelligent_transcription(processing_file)
 
         # Save results
         selected_format = format_var.get()
-        out_path = save_transcription_simple(result, file_path, selected_format)
+        out_path = save_transcription_to_file(result, file_path, selected_format)
 
         # UI feedback
         speedup = result.get("speedup", 0)
@@ -452,10 +473,10 @@ def perform_transcription_clean(file_path, output_text, window, pbar, btn):
                 os.remove(temp_file)
             except Exception:
                 pass
-        cleanup_ui(btn, pbar)
+        reset_ui_state(btn, pbar)
 
 
-def transcribe_file():
+def select_and_transcribe_audio_file():
     """File selection and transcription trigger"""
     file_path = filedialog.askopenfilename(
         filetypes=[("Audio Files", "*.wav *.mp3 *.m4a *.flac *.ogg *.aac")]
@@ -469,13 +490,13 @@ def transcribe_file():
     progress_bar.start()
 
     threading.Thread(
-        target=perform_transcription_clean,
+        target=process_transcription_workflow,
         args=(file_path, output_text, window, progress_bar, transcribe_button),
         daemon=True,
     ).start()
 
 
-def on_file_drop(event):
+def handle_file_drop_event(event):
     """Drag and drop handler - only if drag/drop available"""
     if not DRAG_DROP_AVAILABLE:
         return
@@ -523,12 +544,15 @@ def on_file_drop(event):
         output_text.delete("1.0", tk.END)
         output_text.insert(tk.END, f"📂 Processing: {os.path.basename(file_path)}\n")
 
-        transcribe_button.config(state=tk.DISABLED)
-        progress_bar.grid(row=0, column=3, padx=10)
+        if MODERN_UI_AVAILABLE:
+            transcribe_button.configure(state="disabled")
+        else:
+            transcribe_button.config(state=tk.DISABLED)
+        progress_bar.grid(row=3, column=0, sticky="ew", padx=20, pady=10)
         progress_bar.start()
 
         threading.Thread(
-            target=perform_transcription_clean,
+            target=process_transcription_workflow,
             args=(file_path, output_text, window, progress_bar, transcribe_button),
             daemon=True,
         ).start()
@@ -540,13 +564,13 @@ def on_file_drop(event):
         print(f"[DEBUG] Drag & drop error: {e}")
 
 
-def preload_model():
+def preload_ai_model_async():
     """Preload model if available"""
 
     def load():
         try:
             if WHISPER_AVAILABLE:
-                get_cached_model()
+                load_cached_whisper_model()
                 output_text.insert(tk.END, "✅ AI Model preloaded and ready!\n")
             else:
                 output_text.insert(
@@ -558,9 +582,9 @@ def preload_model():
     threading.Thread(target=load, daemon=True).start()
 
 
-def show_dependency_info():
+def display_dependency_information():
     """Show dependency status to user"""
-    status = check_dependencies()
+    status = validate_system_dependencies()
     info_text = "📋 Dependency Status:\n\n"
 
     if status["whisper"]:
@@ -584,110 +608,473 @@ def show_dependency_info():
     messagebox.showinfo("Dependency Status", info_text)
 
 
-# GUI Setup
-window = TkinterDnD.Tk() if DRAG_DROP_AVAILABLE else tk.Tk()
-window.title(f"🚀 GreekDrop {VERSION}")
-window.geometry("800x600")
+# ========================== MODERN UI SETUP ==========================
 
-frame = tk.Frame(window)
-frame.pack(pady=10)
 
-transcribe_button = tk.Button(
-    frame,
-    text="📂 Select Audio File",
-    command=transcribe_file,
-    font=("Arial", 14),
-    bg="#4CAF50",
-    fg="white",
-)
-transcribe_button.grid(row=0, column=0, padx=10)
+def initialize_modern_application():
+    """Create modern Material Design-inspired UI"""
+    global window, output_text, transcribe_button, format_var, progress_bar
 
-format_var = tk.StringVar(value="txt")
-format_menu = ttk.Combobox(
-    frame,
-    textvariable=format_var,
-    values=["txt", "srt", "vtt"],
-    width=10,
-    font=("Arial", 12),
-)
-format_menu.grid(row=0, column=1)
+    # Initialize window with modern theme
+    if MODERN_UI_AVAILABLE:
+        window = ttk_bs.Window(themename="flatly")  # Modern light theme
+    else:
+        window = TkinterDnD.Tk() if DRAG_DROP_AVAILABLE else tk.Tk()
+        window.configure(bg="#f8f9fa")
 
-label = tk.Label(frame, text="📄 Format", font=("Arial", 11))
-label.grid(row=0, column=2, padx=5)
+    window.title(f"🎯 GreekDrop {VERSION}")
+    window.geometry("900x700")
+    window.minsize(800, 600)
 
-# Preload button - only show if Whisper available
-if WHISPER_AVAILABLE:
-    preload_btn = tk.Button(
-        frame,
-        text="🚀 Preload AI",
-        command=preload_model,
-        font=("Arial", 10),
-        bg="#2196F3",
-        fg="white",
+    # Configure grid weights for responsive design
+    window.grid_rowconfigure(1, weight=1)
+    window.grid_columnconfigure(0, weight=1)
+
+    # Header frame with app title and status
+    create_header_frame()
+
+    # Main control panel
+    create_control_panel()
+
+    # Output/log area
+    create_output_area()
+
+    # Footer with info
+    create_footer()
+
+    # Setup drag & drop functionality
+    configure_drag_drop_functionality()
+
+    # Apply modern styling
+    apply_modern_styling()
+
+    # Welcome message
+    show_welcome_message()
+
+
+def create_header_frame():
+    """Create modern header with title and status indicators"""
+    global header_frame, status_frame
+
+    if MODERN_UI_AVAILABLE:
+        header_frame = ttk_bs.Frame(window, bootstyle="primary")
+    else:
+        header_frame = tk.Frame(window, bg="#007bff", height=80)
+
+    header_frame.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
+    header_frame.grid_columnconfigure(1, weight=1)
+
+    # App logo/title
+    if MODERN_UI_AVAILABLE:
+        title_label = ttk_bs.Label(
+            header_frame,
+            text="🎯 GreekDrop",
+            font=("Segoe UI", 20, "bold"),
+            bootstyle="inverse-primary",
+        )
+        version_label = ttk_bs.Label(
+            header_frame,
+            text=f"v{VERSION}",
+            font=("Segoe UI", 10),
+            bootstyle="inverse-primary",
+        )
+    else:
+        title_label = tk.Label(
+            header_frame,
+            text="🎯 GreekDrop",
+            font=("Segoe UI", 20, "bold"),
+            bg="#007bff",
+            fg="white",
+        )
+        version_label = tk.Label(
+            header_frame,
+            text=f"v{VERSION}",
+            font=("Segoe UI", 10),
+            bg="#007bff",
+            fg="#b3d9ff",
+        )
+
+    title_label.grid(row=0, column=0, padx=20, pady=15, sticky="w")
+    version_label.grid(row=1, column=0, padx=20, pady=(0, 15), sticky="w")
+
+    # Status indicators
+    create_status_indicators()
+
+
+def create_status_indicators():
+    """Create status indicators for dependencies"""
+    global status_frame
+
+    if MODERN_UI_AVAILABLE:
+        status_frame = ttk_bs.Frame(header_frame, bootstyle="primary")
+    else:
+        status_frame = tk.Frame(header_frame, bg="#007bff")
+
+    status_frame.grid(row=0, column=2, rowspan=2, padx=20, pady=15, sticky="e")
+
+    # Hardware status
+    hardware_info = "GPU" if TORCH_AVAILABLE and torch.cuda.is_available() else "CPU"
+    hw_color = "success" if "GPU" in hardware_info else "warning"
+
+    if MODERN_UI_AVAILABLE:
+        hw_label = ttk_bs.Label(
+            status_frame,
+            text=f"🖥️ {hardware_info}",
+            bootstyle=f"inverse-{hw_color}",
+            font=("Segoe UI", 9),
+        )
+        ai_status = "🧠 AI Ready" if WHISPER_AVAILABLE else "⚠️ Basic Mode"
+        ai_color = "success" if WHISPER_AVAILABLE else "warning"
+        ai_label = ttk_bs.Label(
+            status_frame,
+            text=ai_status,
+            bootstyle=f"inverse-{ai_color}",
+            font=("Segoe UI", 9),
+        )
+    else:
+        hw_label = tk.Label(
+            status_frame,
+            text=f"🖥️ {hardware_info}",
+            bg="#007bff",
+            fg="white",
+            font=("Segoe UI", 9),
+        )
+        ai_status = "🧠 AI Ready" if WHISPER_AVAILABLE else "⚠️ Basic Mode"
+        ai_label = tk.Label(
+            status_frame, text=ai_status, bg="#007bff", fg="white", font=("Segoe UI", 9)
+        )
+
+    hw_label.grid(row=0, column=0, sticky="e", pady=2)
+    ai_label.grid(row=1, column=0, sticky="e", pady=2)
+
+
+def create_control_panel():
+    """Create modern control panel with buttons and options"""
+    global control_frame, transcribe_button, format_var, format_menu, progress_bar
+
+    if MODERN_UI_AVAILABLE:
+        control_frame = ttk_bs.Frame(window, bootstyle="light")
+    else:
+        control_frame = tk.Frame(window, bg="#f8f9fa")
+
+    control_frame.grid(row=1, column=0, sticky="ew", padx=20, pady=20)
+    control_frame.grid_columnconfigure(0, weight=1)
+
+    # Main action button (prominent)
+    if MODERN_UI_AVAILABLE:
+        transcribe_button = ttk_bs.Button(
+            control_frame,
+            text="📂  Select Audio File",
+            command=select_and_transcribe_audio_file,
+            bootstyle="success-outline",
+            width=25,
+        )
+        transcribe_button.configure(style="Outline.TButton")
+    else:
+        transcribe_button = tk.Button(
+            control_frame,
+            text="📂  Select Audio File",
+            command=select_and_transcribe_audio_file,
+            font=("Segoe UI", 12, "bold"),
+            bg="#28a745",
+            fg="white",
+            relief="flat",
+            padx=20,
+            pady=10,
+        )
+
+    transcribe_button.grid(row=0, column=0, pady=10)
+
+    # Options frame
+    if MODERN_UI_AVAILABLE:
+        options_frame = ttk_bs.Frame(control_frame, bootstyle="light")
+    else:
+        options_frame = tk.Frame(control_frame, bg="#f8f9fa")
+
+    options_frame.grid(row=1, column=0, pady=10)
+
+    # Format selection
+    if MODERN_UI_AVAILABLE:
+        format_label = ttk_bs.Label(
+            options_frame, text="Export Format:", font=("Segoe UI", 10)
+        )
+        format_var = tk.StringVar(value="txt")
+        format_menu = ttk_bs.Combobox(
+            options_frame,
+            textvariable=format_var,
+            values=["txt", "srt", "vtt"],
+            width=12,
+            bootstyle="primary",
+        )
+    else:
+        format_label = tk.Label(
+            options_frame, text="Export Format:", font=("Segoe UI", 10), bg="#f8f9fa"
+        )
+        format_var = tk.StringVar(value="txt")
+        format_menu = ttk.Combobox(
+            options_frame,
+            textvariable=format_var,
+            values=["txt", "srt", "vtt"],
+            width=12,
+            font=("Segoe UI", 10),
+        )
+
+    format_label.grid(row=0, column=0, padx=(0, 10), pady=5)
+    format_menu.grid(row=0, column=1, padx=10, pady=5)
+
+    # Action buttons frame
+    if MODERN_UI_AVAILABLE:
+        buttons_frame = ttk_bs.Frame(control_frame, bootstyle="light")
+    else:
+        buttons_frame = tk.Frame(control_frame, bg="#f8f9fa")
+
+    buttons_frame.grid(row=2, column=0, pady=10)
+
+    # Preload AI button (if available)
+    if WHISPER_AVAILABLE:
+        if MODERN_UI_AVAILABLE:
+            preload_btn = ttk_bs.Button(
+                buttons_frame,
+                text="🚀 Preload AI",
+                command=preload_ai_model_async,
+                bootstyle="info-outline",
+                width=12,
+            )
+        else:
+            preload_btn = tk.Button(
+                buttons_frame,
+                text="🚀 Preload AI",
+                command=preload_ai_model_async,
+                font=("Segoe UI", 10),
+                bg="#17a2b8",
+                fg="white",
+                relief="flat",
+                padx=15,
+                pady=5,
+            )
+        preload_btn.grid(row=0, column=0, padx=5)
+
+    # Info button
+    if MODERN_UI_AVAILABLE:
+        info_btn = ttk_bs.Button(
+            buttons_frame,
+            text="ℹ️ Info",
+            command=display_dependency_information,
+            bootstyle="warning-outline",
+            width=12,
+        )
+    else:
+        info_btn = tk.Button(
+            buttons_frame,
+            text="ℹ️ Info",
+            command=display_dependency_information,
+            font=("Segoe UI", 10),
+            bg="#ffc107",
+            fg="black",
+            relief="flat",
+            padx=15,
+            pady=5,
+        )
+
+    info_btn.grid(row=0, column=1, padx=5)
+
+    # Progress bar (hidden by default)
+    if MODERN_UI_AVAILABLE:
+        progress_bar = ttk_bs.Progressbar(
+            control_frame, mode="indeterminate", bootstyle="success-striped"
+        )
+    else:
+        progress_bar = ttk.Progressbar(control_frame, mode="indeterminate")
+
+    progress_bar.grid(row=3, column=0, sticky="ew", padx=20, pady=10)
+    progress_bar.grid_remove()
+
+
+def create_output_area():
+    """Create modern output/log area with better styling"""
+    global output_text, output_frame
+
+    if MODERN_UI_AVAILABLE:
+        output_frame = ttk_bs.Frame(window, bootstyle="secondary")
+    else:
+        output_frame = tk.Frame(window, bg="#e9ecef")
+
+    output_frame.grid(row=2, column=0, sticky="nsew", padx=20, pady=(0, 20))
+    output_frame.grid_rowconfigure(1, weight=1)
+    output_frame.grid_columnconfigure(0, weight=1)
+
+    # Output area label
+    if MODERN_UI_AVAILABLE:
+        output_label = ttk_bs.Label(
+            output_frame,
+            text="📝 Transcription Output & Status",
+            font=("Segoe UI", 12, "bold"),
+            bootstyle="secondary",
+        )
+    else:
+        output_label = tk.Label(
+            output_frame,
+            text="📝 Transcription Output & Status",
+            font=("Segoe UI", 12, "bold"),
+            bg="#e9ecef",
+        )
+
+    output_label.grid(row=0, column=0, sticky="w", padx=10, pady=10)
+
+    # Text area with scrollbar
+    text_frame = tk.Frame(output_frame)
+    text_frame.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
+    text_frame.grid_rowconfigure(0, weight=1)
+    text_frame.grid_columnconfigure(0, weight=1)
+
+    output_text = tk.Text(
+        text_frame,
+        wrap=tk.WORD,
+        font=("Consolas", 10),
+        bg="#ffffff",
+        fg="#212529",
+        relief="flat",
+        borderwidth=0,
+        padx=15,
+        pady=15,
     )
-    preload_btn.grid(row=0, column=3, padx=5)
 
-# Info button
-info_btn = tk.Button(
-    frame,
-    text="ℹ️ Info",
-    command=show_dependency_info,
-    font=("Arial", 10),
-    bg="#FF9800",
-    fg="white",
-)
-info_btn.grid(row=0, column=4, padx=5)
+    # Scrollbar
+    scrollbar = ttk.Scrollbar(text_frame, orient="vertical", command=output_text.yview)
+    output_text.configure(yscrollcommand=scrollbar.set)
 
-progress_bar = ttk.Progressbar(frame, mode="indeterminate")
-progress_bar.grid_remove()
+    output_text.grid(row=0, column=0, sticky="nsew")
+    scrollbar.grid(row=0, column=1, sticky="ns")
 
-output_text = tk.Text(window, wrap=tk.WORD, font=("Consolas", 10))
-output_text.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
+    # Configure text tags for colored output
+    output_text.tag_config(
+        "header", foreground="#007bff", font=("Consolas", 12, "bold")
+    )
+    output_text.tag_config("info", foreground="#17a2b8", font=("Consolas", 10))
+    output_text.tag_config(
+        "success", foreground="#28a745", font=("Consolas", 10, "bold")
+    )
+    output_text.tag_config("warning", foreground="#ffc107", font=("Consolas", 10))
+    output_text.tag_config("error", foreground="#dc3545", font=("Consolas", 10, "bold"))
+    output_text.tag_config("stats", foreground="#6f42c1", font=("Consolas", 10))
 
-# Enhanced text styling
-output_text.tag_config("info", foreground="#2196F3")
-output_text.tag_config("stats", foreground="#FF9800")
-output_text.tag_config("done", foreground="#4CAF50", font=("Consolas", 10, "bold"))
 
-# Welcome message with dependency info
-output_text.insert(tk.END, f"🚀 GreekDrop {VERSION} - Clean Edition\n")
-hardware_info = "GPU" if TORCH_AVAILABLE and torch.cuda.is_available() else "CPU"
-output_text.insert(tk.END, f"🖥️ Hardware: {hardware_info} acceleration\n")
+def create_footer():
+    """Create footer with drag & drop indicator"""
+    global footer_frame
 
-if WHISPER_AVAILABLE:
-    output_text.insert(tk.END, "🧠 AI Transcription: Ready\n")
-else:
-    output_text.insert(tk.END, "⚠️ AI Transcription: Install openai-whisper\n")
+    if MODERN_UI_AVAILABLE:
+        footer_frame = ttk_bs.Frame(window, bootstyle="dark")
+    else:
+        footer_frame = tk.Frame(window, bg="#343a40", height=40)
 
-output_text.insert(tk.END, "💡 Click ℹ️ Info for dependency status\n\n")
+    footer_frame.grid(row=3, column=0, sticky="ew", padx=0, pady=0)
 
-# Drag and drop setup with visual feedback - only if available
-if DRAG_DROP_AVAILABLE:
-    window.drop_target_register(DND_FILES)
-    window.dnd_bind("<<Drop>>", on_file_drop)
+    if DRAG_DROP_AVAILABLE:
+        footer_text = "📁 Drag & drop audio files anywhere to transcribe"
+    else:
+        footer_text = "💡 Install tkinterdnd2 for drag & drop functionality"
 
-    # Add visual feedback for drag & drop
-    def on_drag_enter(event):
-        window.config(bg="#E8F5E8")
-        output_text.config(bg="#F0F8F0")
-        return event.action
+    if MODERN_UI_AVAILABLE:
+        footer_label = ttk_bs.Label(
+            footer_frame,
+            text=footer_text,
+            font=("Segoe UI", 9),
+            bootstyle="inverse-dark",
+        )
+    else:
+        footer_label = tk.Label(
+            footer_frame,
+            text=footer_text,
+            font=("Segoe UI", 9),
+            bg="#343a40",
+            fg="#ffffff",
+        )
 
-    def on_drag_leave(event):
-        window.config(bg="SystemButtonFace")  # Default system color
-        output_text.config(bg="white")
-        return event.action
+    footer_label.pack(pady=10)
 
-    window.dnd_bind("<<DragEnter>>", on_drag_enter)
-    window.dnd_bind("<<DragLeave>>", on_drag_leave)
 
-    output_text.insert(tk.END, "📁 Drag & drop enabled - Drop audio files here!\n")
-else:
-    output_text.insert(tk.END, "📁 Use file button to select audio\n")
+def configure_drag_drop_functionality():
+    """Configure drag & drop functionality with visual feedback - renamed from setup_drag_drop"""
+    if DRAG_DROP_AVAILABLE and hasattr(window, "drop_target_register"):
+        window.drop_target_register(DND_FILES)
+        window.dnd_bind("<<Drop>>", handle_file_drop_event)
+
+        def on_drag_enter(event):
+            if MODERN_UI_AVAILABLE:
+                window.configure(bg="#e8f5e8")
+            else:
+                window.configure(bg="#e8f5e8")
+            output_text.configure(bg="#f0f8f0")
+            return event.action
+
+        def on_drag_leave(event):
+            if MODERN_UI_AVAILABLE:
+                window.configure(bg="#ffffff")
+            else:
+                window.configure(bg="#f8f9fa")
+            output_text.configure(bg="#ffffff")
+            return event.action
+
+        window.dnd_bind("<<DragEnter>>", on_drag_enter)
+        window.dnd_bind("<<DragLeave>>", on_drag_leave)
+
+
+def apply_modern_styling():
+    """Apply additional modern styling"""
+    if not MODERN_UI_AVAILABLE:
+        # Apply some basic modern styling for fallback
+        window.option_add("*TCombobox*Listbox.selectBackground", "#007bff")
+
+        # Modern button hover effects (simplified)
+        def on_enter(event):
+            event.widget.configure(relief="solid", borderwidth=1)
+
+        def on_leave(event):
+            event.widget.configure(relief="flat", borderwidth=0)
+
+        if hasattr(transcribe_button, "bind"):
+            transcribe_button.bind("<Enter>", on_enter)
+            transcribe_button.bind("<Leave>", on_leave)
+
+
+def show_welcome_message():
+    """Show welcome message with modern formatting"""
+    output_text.insert(tk.END, "🎯 GreekDrop Audio Transcription\n", "header")
+    output_text.insert(tk.END, f"Version {VERSION} - Clean Edition\n\n", "info")
+
+    # Hardware info
+    hardware_info = "GPU" if TORCH_AVAILABLE and torch.cuda.is_available() else "CPU"
+    output_text.insert(tk.END, f"🖥️ Hardware: {hardware_info} acceleration\n", "info")
+
+    # AI status
+    if WHISPER_AVAILABLE:
+        output_text.insert(tk.END, "🧠 AI Transcription: Ready\n", "success")
+    else:
+        output_text.insert(
+            tk.END, "⚠️ AI Transcription: Install openai-whisper\n", "warning"
+        )
+
+    # Drag & drop status
+    if DRAG_DROP_AVAILABLE:
+        output_text.insert(tk.END, "📁 Drag & drop: Enabled\n", "success")
+    else:
+        output_text.insert(tk.END, "📁 Drag & drop: Install tkinterdnd2\n", "warning")
+
     output_text.insert(
-        tk.END, "💡 Install tkinterdnd2 for drag & drop: pip install tkinterdnd2\n"
+        tk.END, "\n💡 Click ℹ️ Info for detailed dependency status\n", "info"
     )
+    output_text.insert(
+        tk.END, "🚀 Ready to transcribe Greek audio files!\n\n", "success"
+    )
+
+
+# ========================== MODIFIED GUI SETUP ==========================
+
+# Create the modern UI
+initialize_modern_application()
 
 if __name__ == "__main__":
     # Show dependency status on startup
-    check_dependencies()
+    validate_system_dependencies()
     window.mainloop()
