@@ -4,8 +4,8 @@ Handles asynchronous loading of AI models to improve user experience.
 """
 
 import threading
-from config.settings import WHISPER_AVAILABLE
-from logic.transcriber import load_cached_whisper_model
+from config.settings import check_dependencies
+from logic.transcriber import get_transcription_engine
 
 
 def preload_ai_model_async(output_callback=None):
@@ -14,13 +14,23 @@ def preload_ai_model_async(output_callback=None):
     def load_model():
         """Background thread function to load the model."""
         try:
-            if WHISPER_AVAILABLE:
-                load_cached_whisper_model()
-                message = "✅ AI Model preloaded and ready!"
-                if output_callback:
-                    output_callback(message, "success")
+            deps = check_dependencies()
+            if deps.get("whisper", False):
+                engine = get_transcription_engine()
+                success = engine.preload_model("whisper", "base")
+
+                if success:
+                    message = "✅ AI Model preloaded and ready!"
+                    if output_callback:
+                        output_callback(message, "success")
+                    else:
+                        print(message)
                 else:
-                    print(message)
+                    message = "⚠️ Model preload failed"
+                    if output_callback:
+                        output_callback(message, "error")
+                    else:
+                        print(message)
             else:
                 message = "ℹ️ Install openai-whisper for AI transcription"
                 if output_callback:
@@ -40,15 +50,18 @@ def preload_ai_model_async(output_callback=None):
 
 def is_model_preloaded():
     """Check if the AI model is already loaded."""
-    from config.settings import get_model_cache
-
-    model_cache, _ = get_model_cache()
-    return model_cache is not None
+    try:
+        engine = get_transcription_engine()
+        cached_models = engine.whisper.get_cached_models()
+        return len(cached_models) > 0
+    except Exception:
+        return False
 
 
 def get_model_status():
     """Get current model status information."""
-    if not WHISPER_AVAILABLE:
+    deps = check_dependencies()
+    if not deps.get("whisper", False):
         return {
             "available": False,
             "loaded": False,
@@ -61,3 +74,14 @@ def get_model_status():
         "loaded": is_loaded,
         "message": "Model ready" if is_loaded else "Model not loaded",
     }
+
+
+def get_cached_model():
+    """Get the cached model if available."""
+    try:
+        engine = get_transcription_engine()
+        if engine.whisper.model_cache.has_model("base"):
+            return engine.whisper.model_cache.get_model("base")
+        return None
+    except Exception:
+        return None

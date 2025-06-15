@@ -1,13 +1,19 @@
 """
-File utilities for GreekDrop Audio Transcription App.
-Handles audio processing, file conversion, metadata extraction, and export operations.
+Enhanced file utilities for GreekDrop.
+Includes robust path validation, comprehensive logging, and "All" format support.
 """
 
 import os
 import subprocess
 import tempfile
 from datetime import datetime
-from config.settings import AUDIO_EXTENSIONS
+import json
+from pathlib import Path
+from typing import Tuple, List, Dict, Any, Optional
+import time
+
+from config.settings import AUDIO_EXTENSIONS, TRANSCRIPTIONS_DIR
+from utils.logger import get_logger
 
 
 def convert_seconds_to_timestamp(seconds: float, sep=":") -> str:
@@ -41,168 +47,392 @@ def extract_audio_duration_ffprobe(file_path):
         return 0.0
 
 
-def extract_basic_audio_metadata(file_path):
-    """Extract basic audio metadata for display."""
+def validate_audio_file(file_path: str) -> Tuple[bool, str]:
+    """
+    Validate if the file is a supported audio file.
+
+    Args:
+        file_path: Path to the audio file
+
+    Returns:
+        Tuple of (is_valid, message)
+    """
+    logger = get_logger()
+
     try:
-        duration = extract_audio_duration_ffprobe(file_path)
-        if duration > 0:
-            return f"📊 Duration: {duration:.1f}s"
-        return "📊 Could not read audio info"
+        path = Path(file_path)
+
+        # Check if file exists
+        if not path.exists():
+            message = f"File does not exist: {file_path}"
+            logger.error(message)
+            return False, message
+
+        # Check if it's a file (not directory)
+        if not path.is_file():
+            message = f"Path is not a file: {file_path}"
+            logger.error(message)
+            return False, message
+
+        # Check file extension
+        if path.suffix.lower() not in AUDIO_EXTENSIONS:
+            message = f"Unsupported audio format: {path.suffix}. Supported: {', '.join(AUDIO_EXTENSIONS)}"
+            logger.error(message)
+            return False, message
+
+        # Check file size (basic validation)
+        file_size = path.stat().st_size
+        if file_size == 0:
+            message = "Audio file is empty"
+            logger.error(message)
+            return False, message
+
+        # Check if file is readable
+        try:
+            with open(path, "rb") as f:
+                f.read(1024)  # Try reading first 1KB
+        except PermissionError:
+            message = f"Permission denied reading file: {file_path}"
+            logger.error(message)
+            return False, message
+        except Exception as e:
+            message = f"Cannot read audio file: {str(e)}"
+            logger.error(message)
+            return False, message
+
+        logger.info(
+            f"Audio file validation successful: {path.name} ({file_size:,} bytes)"
+        )
+        return True, "Valid audio file"
+
     except Exception as e:
-        return f"📊 Audio info error: {e}"
+        message = f"File validation failed: {str(e)}"
+        logger.error(message, exc_info=True)
+        return False, message
 
 
-def convert_audio_to_wav(input_path):
-    """Convert audio file to WAV format for better compatibility."""
+def normalize_file_path(file_path: str) -> str:
+    """
+    Normalize file path for cross-platform compatibility.
+
+    Args:
+        file_path: Raw file path string
+
+    Returns:
+        Normalized file path
+    """
+    logger = get_logger()
+
     try:
-        output_path = tempfile.mktemp(suffix=".wav")
-        cmd = [
-            "ffmpeg",
-            "-i",
-            input_path,
-            "-ar",
-            "16000",
-            "-ac",
-            "1",
-            output_path,
-            "-y",
-        ]
-        subprocess.run(cmd, capture_output=True, check=True)
-        return output_path
+        # Remove curly braces and quotes that might come from drag & drop
+        cleaned = file_path.strip("{}\"' ")
+
+        # Convert to Path object and resolve
+        normalized = Path(cleaned).resolve()
+
+        logger.debug(f"Normalized path: {file_path} -> {normalized}")
+        return str(normalized)
+
     except Exception as e:
-        print(f"⚠️ WAV conversion failed: {e}")
-        return input_path
+        logger.error(f"Path normalization failed: {str(e)}", exc_info=True)
+        return file_path
 
 
-def validate_audio_file(file_path):
-    """Validate if file is a supported audio format."""
-    if not os.path.isfile(file_path):
-        return False, f"File not found: {file_path}"
+def validate_output_directory(output_dir: Path) -> Tuple[bool, str]:
+    """
+    Validate that output directory exists and is writable.
 
-    if not file_path.lower().endswith(AUDIO_EXTENSIONS):
-        supported = ", ".join(AUDIO_EXTENSIONS)
-        return False, f"Unsupported format. Supported: {supported}"
+    Args:
+        output_dir: Directory path for outputs
 
-    return True, "Valid audio file"
+    Returns:
+        Tuple of (is_valid, message)
+    """
+    logger = get_logger()
 
-
-def save_transcription_to_file(result, file_path, selected_format):
-    """Save transcription result to file in specified format."""
     try:
-        base_name = os.path.splitext(file_path)[0]
+        # Create directory if it doesn't exist
+        output_dir.mkdir(parents=True, exist_ok=True)
 
-        if selected_format == "txt":
-            output_path = f"{base_name}_transcription.txt"
-            export_structured_text_format(result, output_path)
-        elif selected_format in ["srt", "vtt"]:
-            output_path = f"{base_name}_transcription.{selected_format}"
-            export_subtitle_format(
-                result.get("segments", []), output_path, selected_format
-            )
-        else:
-            raise ValueError(f"Unsupported format: {selected_format}")
+        # Test write permissions with a temporary file
+        test_file = output_dir / ".greekdrop_write_test.tmp"
+        try:
+            with open(test_file, "w") as f:
+                f.write("test")
+            test_file.unlink()  # Delete test file
 
-        return output_path
+            logger.debug(f"Output directory validated: {output_dir}")
+            return True, "Directory is writable"
+
+        except PermissionError:
+            message = f"No write permission for directory: {output_dir}"
+            logger.error(message)
+            return False, message
+
     except Exception as e:
-        print(f"❌ Failed to save transcription: {e}")
-        return None
+        message = f"Directory validation failed: {str(e)}"
+        logger.error(message, exc_info=True)
+        return False, message
 
 
-def export_structured_text_format(result, output_path):
-    """Export transcription as structured text file with metadata."""
+def create_filename_base(audio_file_path: str) -> str:
+    """
+    Create base filename for output files.
+
+    Args:
+        audio_file_path: Path to the original audio file
+
+    Returns:
+        Base filename without extension
+    """
+    audio_path = Path(audio_file_path)
+    timestamp = int(time.time())
+    return f"{audio_path.stem}_{timestamp}"
+
+
+def save_transcription_txt(content: str, output_path: Path) -> bool:
+    """Save transcription as plain text file."""
+    logger = get_logger()
+
     try:
         with open(output_path, "w", encoding="utf-8") as f:
-            # Header with metadata
-            f.write("=" * 60 + "\n")
-            f.write("GREEKDROP TRANSCRIPTION RESULT\n")
-            f.write("=" * 60 + "\n")
-            f.write(f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write(f"Duration: {result.get('audio_duration', 0):.1f}s\n")
-            f.write(f"Processing: {result.get('processing_time', 0):.1f}s\n")
-            f.write(f"Speed: {result.get('speedup', 0):.2f}x real-time\n")
-            f.write("=" * 60 + "\n\n")
+            f.write(content)
 
-            # Full text section
-            f.write("FULL TEXT:\n")
-            f.write("-" * 30 + "\n")
-            f.write(result.get("text", "").strip() + "\n\n")
-
-            # Timestamped segments if available
-            segments = result.get("segments", [])
-            if segments:
-                f.write("TIMESTAMPED SEGMENTS:\n")
-                f.write("-" * 30 + "\n")
-                for segment in segments:
-                    start_time = convert_seconds_to_timestamp(segment.get("start", 0))
-                    end_time = convert_seconds_to_timestamp(segment.get("end", 0))
-                    text = segment.get("text", "").strip()
-                    f.write(f"[{start_time} - {end_time}] {text}\n")
-
-        print(f"✅ Text saved: {output_path}")
+        absolute_path = output_path.resolve()
+        logger.log_file_operation("SAVE_TXT", str(absolute_path), success=True)
+        print(f"✅ TXT file saved: {absolute_path}")
+        return True
 
     except Exception as e:
-        print(f"❌ Failed to export text: {e}")
-        raise
+        logger.log_file_operation("SAVE_TXT", str(output_path), success=False)
+        logger.error(f"Failed to save TXT file: {str(e)}", exc_info=True)
+        print(f"❌ Failed to save TXT file: {str(e)}")
+        return False
 
 
-def export_subtitle_format(segments, output_path, format_type="srt"):
-    """Export segments as subtitle file in SRT or VTT format."""
+def save_transcription_srt(segments: List[Dict], output_path: Path) -> bool:
+    """Save transcription as SRT subtitle file."""
+    logger = get_logger()
+
     try:
         with open(output_path, "w", encoding="utf-8") as f:
-            if format_type == "vtt":
-                f.write("WEBVTT\n\n")
-
             for i, segment in enumerate(segments, 1):
-                start = segment.get("start", 0)
-                end = segment.get("end", 0)
+                start_time = format_srt_time(segment.get("start", 0))
+                end_time = format_srt_time(segment.get("end", 0))
                 text = segment.get("text", "").strip()
 
-                if format_type == "srt":
-                    # SRT format: HH:MM:SS,mmm
-                    start_time = convert_seconds_to_timestamp(start).replace(
-                        ":", ",", 2
-                    )
-                    end_time = convert_seconds_to_timestamp(end).replace(":", ",", 2)
-                    f.write(f"{i}\n")
-                    f.write(f"{start_time} --> {end_time}\n")
-                    f.write(f"{text}\n\n")
+                f.write(f"{i}\n")
+                f.write(f"{start_time} --> {end_time}\n")
+                f.write(f"{text}\n\n")
 
-                elif format_type == "vtt":
-                    # VTT format: HH:MM:SS.mmm
-                    start_time = convert_seconds_to_timestamp(start)
-                    end_time = convert_seconds_to_timestamp(end)
-                    f.write(f"{start_time} --> {end_time}\n")
-                    f.write(f"{text}\n\n")
-
-        print(f"✅ Subtitles saved: {output_path}")
+        absolute_path = output_path.resolve()
+        logger.log_file_operation("SAVE_SRT", str(absolute_path), success=True)
+        print(f"✅ SRT file saved: {absolute_path}")
+        return True
 
     except Exception as e:
-        print(f"❌ Failed to export subtitles: {e}")
-        raise
+        logger.log_file_operation("SAVE_SRT", str(output_path), success=False)
+        logger.error(f"Failed to save SRT file: {str(e)}", exc_info=True)
+        print(f"❌ Failed to save SRT file: {str(e)}")
+        return False
 
 
-def cleanup_temp_files(*file_paths):
-    """Clean up temporary files safely."""
-    for file_path in file_paths:
-        if file_path and os.path.exists(file_path):
+def save_transcription_vtt(segments: List[Dict], output_path: Path) -> bool:
+    """Save transcription as VTT subtitle file."""
+    logger = get_logger()
+
+    try:
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write("WEBVTT\n\n")
+
+            for segment in segments:
+                start_time = format_vtt_time(segment.get("start", 0))
+                end_time = format_vtt_time(segment.get("end", 0))
+                text = segment.get("text", "").strip()
+
+                f.write(f"{start_time} --> {end_time}\n")
+                f.write(f"{text}\n\n")
+
+        absolute_path = output_path.resolve()
+        logger.log_file_operation("SAVE_VTT", str(absolute_path), success=True)
+        print(f"✅ VTT file saved: {absolute_path}")
+        return True
+
+    except Exception as e:
+        logger.log_file_operation("SAVE_VTT", str(output_path), success=False)
+        logger.error(f"Failed to save VTT file: {str(e)}", exc_info=True)
+        print(f"❌ Failed to save VTT file: {str(e)}")
+        return False
+
+
+def save_transcription_json(result: Dict[str, Any], output_path: Path) -> bool:
+    """Save complete transcription result as JSON."""
+    logger = get_logger()
+
+    try:
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2, ensure_ascii=False)
+
+        logger.log_file_operation("SAVE_JSON", str(output_path), success=True)
+        return True
+
+    except Exception as e:
+        logger.log_file_operation("SAVE_JSON", str(output_path), success=False)
+        logger.error(f"Failed to save JSON file: {str(e)}", exc_info=True)
+        return False
+
+
+def format_srt_time(seconds: float) -> str:
+    """Format time for SRT format (HH:MM:SS,mmm)."""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    millisecs = int((seconds % 1) * 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d},{millisecs:03d}"
+
+
+def format_vtt_time(seconds: float) -> str:
+    """Format time for VTT format (HH:MM:SS.mmm)."""
+    hours = int(seconds // 3600)
+    minutes = int((seconds % 3600) // 60)
+    secs = int(seconds % 60)
+    millisecs = int((seconds % 1) * 1000)
+    return f"{hours:02d}:{minutes:02d}:{secs:02d}.{millisecs:03d}"
+
+
+def save_transcription_to_file(
+    result: Dict[str, Any], audio_file_path: str, format_type: str
+) -> List[str]:
+    """
+    Save transcription to file(s) with comprehensive validation and logging.
+
+    Args:
+        result: Transcription result dictionary
+        audio_file_path: Path to original audio file
+        format_type: Output format ('.txt', '.srt', '.vtt', '.json', or 'All')
+
+    Returns:
+        List of successfully saved file paths
+    """
+    logger = get_logger()
+
+    # Validate output directory
+    is_valid, message = validate_output_directory(TRANSCRIPTIONS_DIR)
+    if not is_valid:
+        logger.error(f"Output directory validation failed: {message}")
+        return []
+
+    # Create base filename
+    filename_base = create_filename_base(audio_file_path)
+    saved_files = []
+
+    # Extract content and segments
+    text_content = result.get("text", "")
+    segments = result.get("segments", [])
+
+    if not text_content and not segments:
+        logger.error("No transcription content to save")
+        return []
+
+    # Define format handlers
+    format_handlers = {
+        ".txt": lambda path: save_transcription_txt(text_content, path),
+        ".srt": lambda path: save_transcription_srt(segments, path),
+        ".vtt": lambda path: save_transcription_vtt(segments, path),
+        ".json": lambda path: save_transcription_json(result, path),
+    }
+
+    # Determine which formats to save
+    if format_type == "All":
+        formats_to_save = [".txt", ".srt", ".vtt"]
+    else:
+        # Clean the format string
+        format_clean = format_type.strip().lower()
+        if not format_clean.startswith("."):
+            format_clean = "." + format_clean
+        formats_to_save = [format_clean] if format_clean in format_handlers else []
+
+    if not formats_to_save:
+        logger.error(f"Unsupported format type: {format_type}")
+        return []
+
+    # Save each format
+    for fmt in formats_to_save:
+        output_path = TRANSCRIPTIONS_DIR / f"{filename_base}{fmt}"
+
+        try:
+            handler = format_handlers[fmt]
+            if handler(output_path):
+                saved_files.append(str(output_path))
+                logger.info(f"Transcription saved: {output_path.name}")
+        except Exception as e:
+            logger.error(f"Failed to save {fmt} format: {str(e)}", exc_info=True)
+
+    # Log summary
+    if saved_files:
+        logger.info(f"Transcription save complete: {len(saved_files)} files saved")
+        for file_path in saved_files:
+            logger.info(f"  -> {Path(file_path).name}")
+    else:
+        logger.error("No files were saved successfully")
+
+    return saved_files
+
+
+def extract_basic_audio_metadata(file_path: str) -> str:
+    """
+    Extract basic metadata from audio file.
+
+    Args:
+        file_path: Path to audio file
+
+    Returns:
+        Formatted metadata string
+    """
+    logger = get_logger()
+
+    try:
+        path = Path(file_path)
+        stat = path.stat()
+
+        # Basic file info
+        file_size = stat.st_size
+        file_size_mb = file_size / (1024 * 1024)
+
+        metadata = (
+            f"File: {path.name}\n"
+            f"Size: {file_size_mb:.2f} MB ({file_size:,} bytes)\n"
+            f"Format: {path.suffix.upper()}"
+        )
+
+        logger.debug(f"Extracted metadata for: {path.name}")
+        return metadata
+
+    except Exception as e:
+        logger.error(f"Failed to extract metadata: {str(e)}", exc_info=True)
+        return f"File: {Path(file_path).name}\nMetadata extraction failed"
+
+
+def clean_temp_files() -> None:
+    """Clean up temporary files created during processing."""
+    logger = get_logger()
+
+    temp_patterns = ["*.tmp", ".greekdrop_*", "*.temp"]
+    cleaned_count = 0
+
+    for pattern in temp_patterns:
+        for temp_file in TRANSCRIPTIONS_DIR.glob(pattern):
             try:
-                os.unlink(file_path)
+                temp_file.unlink()
+                cleaned_count += 1
+                logger.debug(f"Cleaned temp file: {temp_file.name}")
             except Exception as e:
-                print(f"⚠️ Could not delete temp file {file_path}: {e}")
+                logger.warning(f"Failed to clean temp file {temp_file.name}: {str(e)}")
+
+    if cleaned_count > 0:
+        logger.info(f"Cleaned {cleaned_count} temporary files")
 
 
-def normalize_file_path(file_path):
-    """Normalize file path for cross-platform compatibility."""
-    # Remove quotes if present
-    if file_path.startswith('"') and file_path.endswith('"'):
-        file_path = file_path[1:-1]
-    elif file_path.startswith("'") and file_path.endswith("'"):
-        file_path = file_path[1:-1]
-
-    # Handle multiple files - take the first one
-    if "\n" in file_path or " " in file_path:
-        files = file_path.split("\n") if "\n" in file_path else [file_path]
-        file_path = files[0].strip()
-
-    # Convert to platform-appropriate path
-    return os.path.normpath(file_path)
+def get_output_directory() -> str:
+    """Get the current output directory path."""
+    return str(TRANSCRIPTIONS_DIR.absolute())
