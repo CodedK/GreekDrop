@@ -155,11 +155,7 @@ class GreekDropUI:
             )
         else:
             # Fallback to standard tkinter
-            if DRAG_DROP_AVAILABLE:
-                self.window = TkinterDnD.Tk()
-            else:
-                self.window = tk.Tk()
-
+            self.window = TkinterDnD.Tk() if DRAG_DROP_AVAILABLE else tk.Tk()
             self.window.title(f"{APP_NAME} {VERSION}")
             self.window.geometry(WINDOW_SIZE)
             self.window.minsize(*MIN_WINDOW_SIZE)
