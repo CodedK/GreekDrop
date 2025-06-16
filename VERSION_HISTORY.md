@@ -1,8 +1,9 @@
 # Version History
 
-## v2.0.0-CLEAN - Major Bug Fixes & Architecture Overhaul
+## v2.0.0 - Major Bug Fixes & Architecture Overhaul
 
 ### 🔧 Critical Bug Fixes
+
 - **Fixed GPU Detection Logic**: UI now correctly highlights active device (CPU/GPU) in green using real-time `torch.cuda.is_available()` detection instead of cached values
 - **Fixed Export File Locations**: All save functions now display absolute file paths in console and UI with toast notifications
 - **Fixed Drag & Drop Workflow**: Dropped files now properly load into transcription workflow with visual feedback
@@ -10,6 +11,7 @@
 - **Fixed Output Folder Confusion**: Output directory clearly displayed in UI settings with full absolute paths shown
 
 ### 🏗️ Architecture Improvements
+
 - **Modular Code Structure**: Split functionality into logical modules:
   - `utils/logger.py` - Comprehensive logging system
   - `utils/hardware.py` - Real-time hardware detection
@@ -21,6 +23,7 @@
 - **Thread-Safe Operations**: Improved concurrency and resource management
 
 ### 🎨 UI/UX Enhancements
+
 - **Material Design Interface**: Modern ttkbootstrap styling with fallback support
 - **Toast Notification System**: User-friendly feedback for all operations
 - **Dynamic Hardware Status**: Real-time GPU/CPU status with device names
@@ -29,6 +32,7 @@
 - **Drag & Drop Improvements**: Enhanced file validation and user feedback
 
 ### ⚙️ Hardware & Performance
+
 - **Real-Time GPU Detection**: Uses `torch.cuda.is_available()` for accurate status
 - **Force CPU/GPU Modes**: Environment variable support for debugging
 - **Hardware Diagnostics**: Detailed hardware information display
@@ -36,23 +40,27 @@
 - **Memory Management**: Better resource cleanup and optimization
 
 ### 📝 Logging & Debugging
+
 - **Structured Logging**: File and console logging with different levels
 - **Operation Tracking**: File operations, model loading, and hardware detection logs
 - **Debug Mode**: Enhanced debugging with detailed traceback information
 - **Clean Console Output**: Professional terminal output without emojis
 
 ### 🔌 Dependencies & Requirements
+
 - **Pinned Versions**: Updated requirements.txt with specific version numbers
 - **Dependency Validation**: Comprehensive dependency checking and reporting
 - **Graceful Fallbacks**: UI works even when optional dependencies are missing
 - **Clean Dependencies**: Removed unused imports and optimized requirements
 
 ### 🧪 Testing & Validation
+
 - **Bug Fix Verification**: Created comprehensive test suite to verify all fixes
 - **Runtime Validation**: Real-time validation of hardware and dependency status
 - **Error Recovery**: Improved error handling and recovery mechanisms
 
 ### 📚 Documentation
+
 - **Bug Fix Summary**: Detailed documentation of all fixes in BUG_FIXES_SUMMARY.md
 - **Code Documentation**: Enhanced docstrings and inline documentation
 - **User Guide**: Updated instructions and usage information

@@ -11,7 +11,7 @@ from pathlib import Path
 
 # Application constants
 APP_NAME = "GreekDrop"
-VERSION = "2.0.0-CLEAN"
+VERSION = "2.0.0"
 WINDOW_SIZE = "950x750"
 MIN_WINDOW_SIZE = (850, 650)
 
